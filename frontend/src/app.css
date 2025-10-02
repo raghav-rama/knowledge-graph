@@ -1,0 +1,21 @@
+:root {
+  --color-prussian-blue: #1c3144;
+  --color-verdigris: #56a3a6;
+  --color-black-bean: #37000a;
+  --color-pink-lavender: #e4b7e5;
+  --color-light-orange: #fee1c7;
+
+  --gradient-diagonal: linear-gradient(135deg, var(--color-prussian-blue), var(--color-verdigris), var(--color-black-bean), var(--color-pink-lavender), var(--color-light-orange));
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--color-light-orange);
+  color: var(--color-prussian-blue);
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+}
