@@ -36,7 +36,8 @@ pub trait KvStorage: Send + Sync {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocProcessingStatus {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub status: String,
     pub content_summary: Option<String>,
     pub content_length: Option<i64>,

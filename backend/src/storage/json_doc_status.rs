@@ -24,7 +24,6 @@ pub struct JsonDocStatusConfig {
 }
 
 pub struct JsonDocStatusStorage {
-    namespace: String,
     final_namespace: String,
     file_path: PathBuf,
     data: Arc<RwLock<HashMap<String, DocRecord>>>,
@@ -75,7 +74,7 @@ impl DocRecord {
 
     fn to_status(&self, id: &str) -> DocProcessingStatus {
         DocProcessingStatus {
-            id: id.to_string(),
+            id: Some(id.to_string()),
             status: self.status.clone(),
             content_summary: self.content_summary.clone(),
             content_length: self.content_length,
@@ -88,11 +87,11 @@ impl DocRecord {
             ),
             track_id: self.track_id.clone(),
             chunks_list: Some(self.chunks_list.clone()),
-            metadata: if self.metadata.is_null() {
-                Some(empty_object())
+            metadata: Some(if self.metadata.is_null() {
+                empty_object()
             } else {
-                Some(self.metadata.clone())
-            },
+                self.metadata.clone()
+            }),
             error_msg: self.error_msg.clone(),
         }
     }
@@ -115,7 +114,6 @@ impl JsonDocStatusStorage {
         let file_path = workspace_dir.join(format!("doc_status_{}.json", namespace));
 
         Self {
-            namespace,
             final_namespace,
             file_path,
             data: Arc::new(RwLock::new(HashMap::new())),
