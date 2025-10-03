@@ -21,9 +21,7 @@
 	const navTabs: NavTab[] = [
 		{ label: 'Documents', active: true },
 		{ label: 'Knowledge Graph' },
-		{ label: 'Retrieval' },
-		{ label: 'API' },
-		{ label: 'Login Free' }
+		{ label: 'API' }
 	];
 
 	const toolbarActions: ToolbarAction[] = [
