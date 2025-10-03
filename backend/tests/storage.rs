@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use backend::storage::{
-    DocProcessingStatus, DocStatusStorage, JsonDocStatusConfig, JsonDocStatusStorage,
+    DocProcessingStatus, DocStatus, DocStatusStorage, JsonDocStatusConfig, JsonDocStatusStorage,
     JsonKvStorage, JsonKvStorageConfig, KvStorage,
 };
 use serde_json::json;
@@ -114,7 +114,7 @@ async fn json_doc_status_roundtrip_and_pagination() -> anyhow::Result<()> {
             "doc-1".to_string(),
             DocProcessingStatus {
                 id: Some("doc-1".to_string()),
-                status: "Completed".to_string(),
+                status: DocStatus::PROCESSED,
                 content_summary: Some("summary 1".into()),
                 content_length: Some(100),
                 created_at: Some("2025-02-10T12:00:00Z".into()),
@@ -130,7 +130,7 @@ async fn json_doc_status_roundtrip_and_pagination() -> anyhow::Result<()> {
             "doc-2".to_string(),
             DocProcessingStatus {
                 id: Some("doc-2".to_string()),
-                status: "Processing".to_string(),
+                status: DocStatus::PROCESSING,
                 content_summary: None,
                 content_length: None,
                 created_at: Some("2025-02-10T12:01:00Z".into()),
@@ -146,7 +146,7 @@ async fn json_doc_status_roundtrip_and_pagination() -> anyhow::Result<()> {
             "doc-3".to_string(),
             DocProcessingStatus {
                 id: Some("doc-3".to_string()),
-                status: "Completed".to_string(),
+                status: DocStatus::PROCESSED,
                 content_summary: Some("summary 3".into()),
                 content_length: Some(250),
                 created_at: Some("2025-02-10T12:02:00Z".into()),
@@ -166,19 +166,19 @@ async fn json_doc_status_roundtrip_and_pagination() -> anyhow::Result<()> {
     storage.sync_if_dirty().await?;
 
     let counts = storage.status_counts().await?;
-    assert_eq!(counts.get("Completed"), Some(&2));
+    assert_eq!(counts.get(&DocStatus::PROCESSED), Some(&2));
 
     let counts_with_total = storage.status_counts_with_total().await?;
-    assert_eq!(counts_with_total.get("all"), Some(&3));
+    assert_eq!(counts_with_total.get(&DocStatus::ALL), Some(&3));
 
-    let by_status = storage.docs_by_status("Completed").await?;
+    let by_status = storage.docs_by_status(&DocStatus::PROCESSED).await?;
     assert_eq!(by_status.len(), 2);
 
     let by_track = storage.docs_by_track_id("track-1").await?;
     assert_eq!(by_track.len(), 2);
 
     let (page, total) = storage
-        .docs_paginated(Some("Completed"), 1, 2, "updated_at", "desc")
+        .docs_paginated(Some(&DocStatus::PROCESSED), 1, 2, "updated_at", "desc")
         .await?;
     assert_eq!(total, 2);
     assert_eq!(page.len(), 2);

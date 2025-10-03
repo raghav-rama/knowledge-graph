@@ -34,11 +34,21 @@ pub trait KvStorage: Send + Sync {
     async fn sync_if_dirty(&self) -> StorageResult<()>;
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub enum DocStatus {
+    #[default]
+    PENDING,
+    PROCESSING,
+    PROCESSED,
+    FAILED,
+    ALL,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocProcessingStatus {
     #[serde(default)]
     pub id: Option<String>,
-    pub status: String,
+    pub status: DocStatus,
     pub content_summary: Option<String>,
     pub content_length: Option<i64>,
     pub created_at: Option<String>,
@@ -71,12 +81,12 @@ pub trait DocStatusStorage: Send + Sync {
 
     async fn filter_keys(&self, keys: &HashSet<String>) -> StorageResult<HashSet<String>>;
 
-    async fn status_counts(&self) -> StorageResult<HashMap<String, usize>>;
-    async fn status_counts_with_total(&self) -> StorageResult<HashMap<String, usize>>;
+    async fn status_counts(&self) -> StorageResult<HashMap<DocStatus, usize>>;
+    async fn status_counts_with_total(&self) -> StorageResult<HashMap<DocStatus, usize>>;
 
     async fn docs_by_status(
         &self,
-        status: &str,
+        status: &DocStatus,
     ) -> StorageResult<HashMap<String, DocProcessingStatus>>;
 
     async fn docs_by_track_id(
@@ -86,7 +96,7 @@ pub trait DocStatusStorage: Send + Sync {
 
     async fn docs_paginated(
         &self,
-        status_filter: Option<&str>,
+        status_filter: Option<&DocStatus>,
         page: usize,
         page_size: usize,
         sort_field: &str,

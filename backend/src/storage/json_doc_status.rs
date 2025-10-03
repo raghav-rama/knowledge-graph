@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use tokio::sync::RwLock;
 
 use super::io::{ensure_parent_dir, load_or_default, write_json_file};
-use super::{DocProcessingStatus, DocStatusStorage};
+use super::{DocProcessingStatus, DocStatus, DocStatusStorage};
 
 #[derive(Clone, Debug)]
 pub struct JsonDocStatusConfig {
@@ -32,7 +32,7 @@ pub struct JsonDocStatusStorage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct DocRecord {
-    pub status: String,
+    pub status: DocStatus,
 
     #[serde(default)]
     pub content_summary: Option<String>,
@@ -248,28 +248,31 @@ impl DocStatusStorage for JsonDocStatusStorage {
         Ok(keys.difference(&existing).cloned().collect())
     }
 
-    async fn status_counts(&self) -> Result<HashMap<String, usize>> {
+    async fn status_counts(&self) -> Result<HashMap<DocStatus, usize>> {
         let guard = self.data.read().await;
-        let mut counts: HashMap<String, usize> = HashMap::new();
+        let mut counts: HashMap<DocStatus, usize> = HashMap::new();
         for record in guard.values() {
             *counts.entry(record.status.clone()).or_insert(0) += 1;
         }
         Ok(counts)
     }
 
-    async fn status_counts_with_total(&self) -> Result<HashMap<String, usize>> {
+    async fn status_counts_with_total(&self) -> Result<HashMap<DocStatus, usize>> {
         let mut counts = self.status_counts().await?;
         let total: usize = counts.values().copied().sum();
-        counts.insert("all".to_string(), total);
+        counts.insert(DocStatus::ALL, total);
         Ok(counts)
     }
 
-    async fn docs_by_status(&self, status: &str) -> Result<HashMap<String, DocProcessingStatus>> {
+    async fn docs_by_status(
+        &self,
+        status: &DocStatus,
+    ) -> Result<HashMap<String, DocProcessingStatus>> {
         let guard = self.data.read().await;
         Ok(guard
             .iter()
             .filter_map(|(id, record)| {
-                if record.status == status {
+                if &record.status == status {
                     Some((id.clone(), record.to_status(id)))
                 } else {
                     None
@@ -297,7 +300,7 @@ impl DocStatusStorage for JsonDocStatusStorage {
 
     async fn docs_paginated(
         &self,
-        status_filter: Option<&str>,
+        status_filter: Option<&DocStatus>,
         page: usize,
         page_size: usize,
         sort_field: &str,
@@ -316,7 +319,7 @@ impl DocStatusStorage for JsonDocStatusStorage {
             .iter()
             .filter_map(|(id, record)| {
                 if let Some(filter) = status_filter {
-                    if record.status != filter {
+                    if &record.status != filter {
                         return None;
                     }
                 }
