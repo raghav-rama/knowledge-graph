@@ -3,4 +3,4 @@ server:
   port: 42069
 messages:
   greeting: "Hello, World from Axum!!"
-working_dir: "data"
+working_dir: "pgv-data"

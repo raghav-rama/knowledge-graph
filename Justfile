@@ -4,8 +4,8 @@ set shell := ["bash", "-u", "-o", "pipefail", "-c"]
 default: dev
 
 # Common commands used by multiple recipes
-_dev_backend_command := "cd backend && cargo watch -x 'run'"
-_dev_frontend_command := "cd frontend && pnpm run dev"
+_dev_backend_command := "cd runtime && cargo watch -x 'run'"
+_dev_frontend_command := "cd webui && pnpm run dev"
 
 # Backend dev server with hot reload
 dev-backend:
@@ -31,29 +31,29 @@ dev:
 
 # Backend workflows
 fmt-backend:
-    cd backend && cargo fmt --all
+    cd runtime && cargo fmt --all
 
 lint-backend:
-    cd backend && cargo clippy --all-targets --all-features -- -D warnings
+    cd runtime && cargo clippy --all-targets --all-features -- -D warnings
 
 test-backend:
-    cd backend && cargo test
+    cd runtime && cargo test
 
 build-backend:
-    cd backend && cargo build --release
+    cd runtime && cargo build --release
 
 # Frontend workflows
 fmt-frontend:
-    cd frontend && pnpm format
+    cd webui && pnpm format
 
 lint-frontend:
-    cd frontend && pnpm lint
+    cd webui && pnpm lint
 
 check-frontend:
-    cd frontend && pnpm check
+    cd webui && pnpm check
 
 build-frontend:
-    cd frontend && pnpm build
+    cd webui && pnpm build
 
 # Aggregates
 fmt: fmt-backend fmt-frontend

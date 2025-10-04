@@ -58,7 +58,6 @@ pub struct DocProcessingStatus {
     pub chunks_list: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
     pub error_msg: Option<String>,
-    // Add other fields from the Python dataclass as needed
 }
 
 #[async_trait]

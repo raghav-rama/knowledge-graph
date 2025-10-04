@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use backend::storage::{
+use runtime::storage::{
     DocProcessingStatus, DocStatus, DocStatusStorage, JsonDocStatusConfig, JsonDocStatusStorage,
     JsonKvStorage, JsonKvStorageConfig, KvStorage,
 };

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use anyhow::{Context, Result};
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use serde::Deserialize;
@@ -19,7 +22,6 @@ const DEFAULT_CONFIG_PATH: &str = "config/app.yaml";
 #[derive(Debug, Clone, Deserialize)]
 struct AppConfig {
     server: ServerConfig,
-    messages: MessagesConfig,
     working_dir: String,
 }
 
@@ -36,11 +38,6 @@ struct ServerConfig {
     port: u16,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct MessagesConfig {
-    greeting: String,
-}
-
 #[tokio::main]
 async fn main() {
     if let Err(err) = run().await {
@@ -55,7 +52,7 @@ async fn run() -> Result<()> {
     let config = load_config()
         .await
         .context("Failed to load application configuration")?;
-    let working_dir = PathBuf::from("data");
+    let working_dir = PathBuf::from(&config.working_dir);
     let kv_storage = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
         working_dir: working_dir.clone(),
         namespace: "text_chunks".into(),
