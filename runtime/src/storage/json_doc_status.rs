@@ -111,7 +111,7 @@ impl JsonDocStatusStorage {
         };
 
         let final_namespace = format!("{}_{}", workspace_prefix, namespace);
-        let file_path = workspace_dir.join(format!("doc_status_{}.json", namespace));
+        let file_path = workspace_dir.join(format!("kv_store_{}.json", namespace));
 
         Self {
             final_namespace,

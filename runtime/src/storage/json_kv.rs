@@ -260,10 +260,7 @@ impl KvStorage for JsonKvStorage {
     async fn filter_keys(&self, keys: &HashSet<String>) -> Result<HashSet<String>> {
         let guard = self.data.read().await;
         let existing: HashSet<String> = guard.keys().cloned().collect();
-        Ok(keys
-            .intersection(&existing)
-            .cloned()
-            .collect::<HashSet<_>>())
+        Ok(keys.difference(&existing).cloned().collect::<HashSet<_>>())
     }
 
     async fn sync_if_dirty(&self) -> Result<()> {

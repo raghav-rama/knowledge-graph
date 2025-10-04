@@ -12,7 +12,7 @@ use tracing_subscriber::EnvFilter;
 mod storage;
 
 use storage::{
-    DocStatusStorage, KvStorage,
+    DocStatusStorage, KvStorage, StorageManager, StoragesStatus,
     json_doc_status::{JsonDocStatusConfig, JsonDocStatusStorage},
     json_kv::{JsonKvStorage, JsonKvStorageConfig},
 };
@@ -26,10 +26,20 @@ struct AppConfig {
 }
 
 #[derive(Clone)]
+struct AppStorages {
+    full_docs: Arc<JsonKvStorage>,
+    text_chunks: Arc<JsonKvStorage>,
+    full_entities: Arc<JsonKvStorage>,
+    full_relations: Arc<JsonKvStorage>,
+    llm_response_cache: Arc<JsonKvStorage>,
+    doc_status: Arc<JsonDocStatusStorage>,
+}
+
+#[derive(Clone)]
 struct AppState {
     config: Arc<AppConfig>,
-    kv_storage: Arc<JsonKvStorage>,
-    doc_status_storage: Arc<JsonDocStatusStorage>,
+    storages: AppStorages,
+    storages_status: StoragesStatus,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,24 +63,67 @@ async fn run() -> Result<()> {
         .await
         .context("Failed to load application configuration")?;
     let working_dir = PathBuf::from(&config.working_dir);
-    let kv_storage = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+    let workspace = env::var("WORKSPACE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let full_docs = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+        working_dir: working_dir.clone(),
+        namespace: "full_docs".into(),
+        workspace: workspace.clone(),
+    }));
+
+    let text_chunks = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
         working_dir: working_dir.clone(),
         namespace: "text_chunks".into(),
-        workspace: Some("default".into()),
+        workspace: workspace.clone(),
     }));
-    kv_storage.initialize().await?;
+
+    let full_entities = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+        working_dir: working_dir.clone(),
+        namespace: "full_entities".into(),
+        workspace: workspace.clone(),
+    }));
+
+    let full_relations = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+        working_dir: working_dir.clone(),
+        namespace: "full_relations".into(),
+        workspace: workspace.clone(),
+    }));
+
+    let llm_response_cache = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+        working_dir: working_dir.clone(),
+        namespace: "llm_response_cache".into(),
+        workspace: workspace.clone(),
+    }));
 
     let doc_status_storage = Arc::new(JsonDocStatusStorage::new(JsonDocStatusConfig {
-        working_dir,
+        working_dir: working_dir.clone(),
         namespace: "doc_status".into(),
-        workspace: None,
+        workspace: workspace.clone(),
     }));
-    doc_status_storage.initialize().await?;
+
+    let mut storage_manager = StorageManager::new();
+    storage_manager.register_kv(full_docs.clone());
+    storage_manager.register_kv(text_chunks.clone());
+    storage_manager.register_kv(full_entities.clone());
+    storage_manager.register_kv(full_relations.clone());
+    storage_manager.register_kv(llm_response_cache.clone());
+    storage_manager.register_doc_status(doc_status_storage.clone());
+    storage_manager.initialize_all().await?;
 
     let state = Arc::new(AppState {
         config: Arc::new(config.clone()),
-        kv_storage,
-        doc_status_storage,
+        storages: AppStorages {
+            full_docs,
+            text_chunks,
+            full_entities,
+            full_relations,
+            llm_response_cache,
+            doc_status: doc_status_storage,
+        },
+        storages_status: storage_manager.status(),
     });
 
     let addr_string = format!("{}:{}", config.server.host, config.server.port);
@@ -89,10 +142,15 @@ async fn run() -> Result<()> {
         .with_context(|| format!("Failed to bind TCP listener on {addr}"))?;
     info!(%addr, "Backend server listening");
 
-    axum::serve(listener, app)
+    let server_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("Server encountered a fatal error")?;
+        .await;
+
+    if let Err(err) = storage_manager.finalize_all().await {
+        warn!(error = %err, "Failed to finalize storages");
+    }
+
+    server_result.context("Server encountered a fatal error")?;
     Ok(())
 }
 
@@ -124,7 +182,8 @@ fn config_path() -> PathBuf {
 
 async fn handler(State(state): State<Arc<AppState>>) -> Result<String, StatusCode> {
     let docs = state
-        .doc_status_storage
+        .storages
+        .doc_status
         .docs_paginated(None, 1, 10, "updated_at", "desc")
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

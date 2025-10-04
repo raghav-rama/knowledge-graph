@@ -7,10 +7,12 @@ use serde::{Deserialize, Serialize};
 pub mod io;
 pub mod json_doc_status;
 pub mod json_kv;
+pub mod manager;
 
 pub use io::*;
 pub use json_doc_status::{JsonDocStatusConfig, JsonDocStatusStorage};
 pub use json_kv::{JsonKvStorage, JsonKvStorageConfig};
+pub use manager::{StorageManager, StoragesStatus};
 
 pub type StorageResult<T> = Result<T>;
 
@@ -30,7 +32,6 @@ pub trait KvStorage: Send + Sync {
 
     async fn filter_keys(&self, keys: &HashSet<String>) -> StorageResult<HashSet<String>>;
 
-    /// Flush dirty state to disk if needed (Python's `index_done_callback`).
     async fn sync_if_dirty(&self) -> StorageResult<()>;
 }
 

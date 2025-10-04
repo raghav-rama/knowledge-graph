@@ -7,7 +7,6 @@ use tokio::io::AsyncWriteExt;
 
 use super::StorageResult;
 
-/// Ensure the parent directory exists before touching the file.
 pub async fn ensure_parent_dir(path: &Path) -> StorageResult<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).await?;
@@ -15,7 +14,6 @@ pub async fn ensure_parent_dir(path: &Path) -> StorageResult<()> {
     Ok(())
 }
 
-/// Load JSON from disk. Missing files return `Ok(None)`.
 pub async fn read_json_file<T>(path: &Path) -> StorageResult<Option<T>>
 where
     T: DeserializeOwned,
@@ -34,7 +32,7 @@ where
     }
 }
 
-/// Atomically write JSON to disk using a temp file + rename.
+/// Atomically write json to disk using a temp file + rename.
 ///
 /// The write is fsync'd to ensure durability.
 pub async fn write_json_file<T>(path: &Path, value: &T) -> StorageResult<()>
@@ -54,7 +52,7 @@ where
     Ok(())
 }
 
-/// Convenience helper: load JSON or default to an empty value.
+/// load json or default to an empty value.
 pub async fn load_or_default<T>(path: &Path) -> StorageResult<T>
 where
     T: DeserializeOwned + Default,
