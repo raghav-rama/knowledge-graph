@@ -9,8 +9,11 @@ use tokio::{fs, net::TcpListener, signal};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+mod ai;
+mod pipeline;
+mod routes;
 mod storage;
-
+use pipeline::{AppStorages, DocumentManager, Pipeline};
 use storage::{
     DocStatusStorage, KvStorage, StorageManager, StoragesStatus,
     json_doc_status::{JsonDocStatusConfig, JsonDocStatusStorage},
@@ -18,6 +21,8 @@ use storage::{
 };
 
 const DEFAULT_CONFIG_PATH: &str = "config/app.yaml";
+pub(crate) const SUPPORTED_EXTENSIONS: &[&str] =
+    &[".txt", ".md", ".json", ".csv", ".log", ".conf", ".ini"];
 
 #[derive(Debug, Clone, Deserialize)]
 struct AppConfig {
@@ -26,19 +31,10 @@ struct AppConfig {
 }
 
 #[derive(Clone)]
-struct AppStorages {
-    full_docs: Arc<JsonKvStorage>,
-    text_chunks: Arc<JsonKvStorage>,
-    full_entities: Arc<JsonKvStorage>,
-    full_relations: Arc<JsonKvStorage>,
-    llm_response_cache: Arc<JsonKvStorage>,
-    doc_status: Arc<JsonDocStatusStorage>,
-}
-
-#[derive(Clone)]
-struct AppState {
+pub(crate) struct AppState {
     config: Arc<AppConfig>,
-    storages: AppStorages,
+    storages: Arc<AppStorages>,
+    pipeline: Arc<Pipeline>,
     storages_status: StoragesStatus,
 }
 
@@ -113,16 +109,28 @@ async fn run() -> Result<()> {
     storage_manager.register_doc_status(doc_status_storage.clone());
     storage_manager.initialize_all().await?;
 
+    let storages = Arc::new(AppStorages {
+        full_docs,
+        text_chunks,
+        full_entities,
+        full_relations,
+        llm_response_cache,
+        doc_status: doc_status_storage.clone(),
+    });
+
+    let document_manager = DocumentManager::new(
+        working_dir.join("input"),
+        workspace.clone(),
+        SUPPORTED_EXTENSIONS,
+    )
+    .await?;
+
+    let pipeline = Arc::new(Pipeline::new(storages.clone(), document_manager));
+
     let state = Arc::new(AppState {
         config: Arc::new(config.clone()),
-        storages: AppStorages {
-            full_docs,
-            text_chunks,
-            full_entities,
-            full_relations,
-            llm_response_cache,
-            doc_status: doc_status_storage,
-        },
+        storages,
+        pipeline,
         storages_status: storage_manager.status(),
     });
 
@@ -135,6 +143,7 @@ async fn run() -> Result<()> {
     let app = Router::new()
         .route("/", get(handler))
         .route("/health", get(health))
+        .merge(routes::document_routes())
         .with_state(state);
 
     let listener = TcpListener::bind(addr)
