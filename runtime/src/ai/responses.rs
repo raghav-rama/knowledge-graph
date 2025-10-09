@@ -13,7 +13,7 @@ impl ResponsesClient {
     pub fn new(api_key: String, base: Option<String>) -> Self {
         let http = Client::builder()
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(600))
             .build()
             .expect("client");
         Self {
@@ -74,7 +74,6 @@ impl ResponsesClient {
                 }
             }
         }
-
         None
     }
 
@@ -151,7 +150,6 @@ impl ResponsesClient {
             let err_txt = resp.text().await.unwrap_or_default();
             anyhow::bail!("OpenAI error {}: {}", status, err_txt);
         }
-
         anyhow::bail!("Retries exhausted")
     }
 }
