@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use tiktoken_rs::{CoreBPE, o200k_base};
 
-pub trait Tokenizer {
+pub trait Tokenizer: Send + Sync {
     fn encode(&self, text: &str) -> Vec<u32>;
     fn decode(&self, tokens: &[u32]) -> Result<String>;
 }
@@ -35,7 +35,7 @@ pub struct TokenChunk {
     pub chunk_order_index: usize,
 }
 
-pub fn chunking_by_token_size<T: Tokenizer>(
+pub fn chunking_by_token_size<T: Tokenizer + ?Sized>(
     tokenizer: &T,
     content: &str,
     split_by_character: Option<&str>,
