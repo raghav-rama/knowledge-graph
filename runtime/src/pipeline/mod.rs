@@ -14,6 +14,8 @@ use crate::storage::{
     DocProcessingStatus, DocStatus, DocStatusStorage, JsonKvStorage, KvStorage, StorageResult,
 };
 
+pub mod utils;
+
 #[derive(Clone)]
 pub struct DocumentManager {
     base_input_dir: PathBuf,

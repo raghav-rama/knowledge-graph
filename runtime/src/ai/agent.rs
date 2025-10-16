@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::ai::responses::ResponsesClient;
+use super::responses::ResponsesClient;
 
 #[async_trait]
 pub trait Tool: Send + Sync {
