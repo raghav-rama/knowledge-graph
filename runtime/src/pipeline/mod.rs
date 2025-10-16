@@ -10,8 +10,11 @@ use tokio::{fs, sync::Mutex};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::storage::{
-    DocProcessingStatus, DocStatus, DocStatusStorage, JsonKvStorage, KvStorage, StorageResult,
+use crate::{
+    pipeline::utils::{TiktokenTokenizer, Tokenizer, chunking_by_token_size, compute_mdhash_id},
+    storage::{
+        DocProcessingStatus, DocStatus, DocStatusStorage, JsonKvStorage, KvStorage, StorageResult,
+    },
 };
 
 pub mod utils;
@@ -169,6 +172,7 @@ pub struct Pipeline {
     processing_lock: Arc<Mutex<()>>,
     chunk_size: usize,
     chunk_overlap: usize,
+    tokenizer: TiktokenTokenizer,
 }
 
 #[derive(Clone)]
@@ -189,6 +193,7 @@ impl Pipeline {
             processing_lock: Arc::new(Mutex::new(())),
             chunk_size: 500,
             chunk_overlap: 50,
+            tokenizer: TiktokenTokenizer::new().unwrap(),
         }
     }
 
@@ -382,7 +387,18 @@ impl Pipeline {
         }
 
         for (doc_id, status) in pending.drain() {
-            if let Err(err) = self.process_document(&doc_id, &status).await {
+            if let Err(err) = self
+                .process_document(
+                    &doc_id,
+                    &status,
+                    &self.tokenizer,
+                    None,
+                    false,
+                    self.chunk_overlap,
+                    self.chunk_size,
+                )
+                .await
+            {
                 error!(error = %err, doc_id = %doc_id, "failed to process document");
                 let now = chrono::Utc::now().to_rfc3339();
                 let mut payload = HashMap::new();
@@ -410,7 +426,16 @@ impl Pipeline {
         Ok(())
     }
 
-    async fn process_document(&self, doc_id: &str, status: &DocProcessingStatus) -> Result<()> {
+    async fn process_document<T: Tokenizer>(
+        &self,
+        doc_id: &str,
+        status: &DocProcessingStatus,
+        tokenizer: &T,
+        split_by_character: Option<&str>,
+        split_by_character_only: bool,
+        overlap_token_size: usize,
+        max_token_size: usize,
+    ) -> Result<()> {
         let content_value = self
             .storages
             .full_docs
@@ -423,7 +448,14 @@ impl Pipeline {
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("document content malformed"))?;
 
-        let chunks = self.build_chunks(content);
+        let chunks = self.build_chunks(
+            tokenizer,
+            content,
+            split_by_character,
+            split_by_character_only,
+            overlap_token_size,
+            max_token_size,
+        );
         if chunks.is_empty() {
             return Err(anyhow!("document produced no chunks"));
         }
@@ -488,37 +520,37 @@ impl Pipeline {
         Ok(())
     }
 
-    fn build_chunks(&self, content: &str) -> Vec<Chunk> {
-        let words: Vec<&str> = content.split_whitespace().collect();
-        if words.is_empty() {
-            return Vec::new();
-        }
-
-        let mut chunks = Vec::new();
-        let mut start = 0usize;
-        let chunk_word_size = self.chunk_size;
-        let overlap = self.chunk_overlap.min(chunk_word_size);
-
-        while start < words.len() {
-            let end = (start + chunk_word_size).min(words.len());
-            let chunk_words = &words[start..end];
-            let chunk_text = chunk_words.join(" ");
-            let chunk_id = compute_mdhash_id(&chunk_text, "chunk-");
-            chunks.push(Chunk {
-                id: chunk_id,
-                content: chunk_text,
-                order: chunks.len(),
-                token_count: chunk_words.len() as i64,
-            });
-
-            if end == words.len() {
-                break;
+    fn build_chunks<T: Tokenizer>(
+        &self,
+        tokenizer: &T,
+        content: &str,
+        split_by_character: Option<&str>,
+        split_by_character_only: bool,
+        overlap_token_size: usize,
+        max_token_size: usize,
+    ) -> Vec<Chunk> {
+        match chunking_by_token_size(
+            tokenizer,
+            content,
+            split_by_character,
+            split_by_character_only,
+            overlap_token_size,
+            max_token_size,
+        ) {
+            Ok(token_chunks) => token_chunks
+                .into_iter()
+                .map(|chunk| Chunk {
+                    id: compute_mdhash_id(&chunk.content, "chunk-"),
+                    content: chunk.content,
+                    order: chunk.chunk_order_index,
+                    token_count: chunk.tokens as i64,
+                })
+                .collect(),
+            Err(err) => {
+                warn!(error = %err, "tiktoken chunking failed");
+                Vec::new()
             }
-
-            start = end.saturating_sub(overlap);
         }
-
-        chunks
     }
 
     async fn persist_all(&self) -> StorageResult<()> {
@@ -550,20 +582,13 @@ fn summarize_content(content: &str) -> String {
     }
 }
 
-fn compute_mdhash_id(content: &str, prefix: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    let digest = hasher.finalize();
-    format!("{}{:x}", prefix, digest)
-}
-
 #[derive(Clone)]
 struct DocumentInput {
     content: String,
     file_path: String,
 }
 
+#[derive(Debug)]
 struct Chunk {
     id: String,
     content: String,

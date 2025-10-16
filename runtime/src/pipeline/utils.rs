@@ -6,6 +6,7 @@ pub trait Tokenizer {
     fn decode(&self, tokens: &[u32]) -> Result<String>;
 }
 
+#[derive(Clone)]
 pub struct TiktokenTokenizer {
     bpe: CoreBPE,
 }
@@ -80,7 +81,6 @@ pub fn chunking_by_token_size<T: Tokenizer>(
                 }
             }
         }
-
         for (index, (token_len, chunk_text)) in new_chunks.into_iter().enumerate() {
             results.push(TokenChunk {
                 tokens: token_len,
@@ -114,4 +114,12 @@ pub fn chunking_by_token_size<T: Tokenizer>(
     }
 
     Ok(results)
+}
+
+pub fn compute_mdhash_id(content: &str, prefix: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let digest = hasher.finalize();
+    format!("{}{:x}", prefix, digest)
 }
