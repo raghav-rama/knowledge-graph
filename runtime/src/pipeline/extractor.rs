@@ -3,7 +3,15 @@ use std::{path::Path, sync::Arc};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 
-use super::document_manager::{DocumentManager, FileRepository, normalize_extension};
+use super::{
+    chunker::Chunk,
+    document_manager::{DocumentManager, FileRepository, normalize_extension},
+};
+
+use crate::ai::{
+    responses::ResponsesClient,
+    schemas::{EntitiesRelationships, entities_relationships_schema},
+};
 
 #[async_trait]
 pub trait DocumentExtractor: Send + Sync {
@@ -46,5 +54,46 @@ impl DocumentExtractor for Utf8DocumentExtractor {
         }
 
         Ok(text)
+    }
+}
+
+#[derive(Clone)]
+pub struct EntityRelationshipExtract {
+    ai_client: Arc<ResponsesClient>,
+}
+
+impl EntityRelationshipExtract {
+    pub fn new(ai_client: Arc<ResponsesClient>) -> Self {
+        Self { ai_client }
+    }
+}
+
+#[async_trait]
+pub trait EntityRelationshipExtractor: Send + Sync {
+    async fn extract_entities_and_relationships(
+        &self,
+        chunk: &Chunk,
+    ) -> Result<EntitiesRelationships>;
+}
+
+#[async_trait]
+impl EntityRelationshipExtractor for EntityRelationshipExtract {
+    async fn extract_entities_and_relationships(
+        &self,
+        chunk: &Chunk,
+    ) -> Result<EntitiesRelationships> {
+        let schema = entities_relationships_schema();
+        let er: EntitiesRelationships = self
+            .ai_client
+            .responses_structured(
+                "gpt-5-mini",
+                "You are helpful assistant",
+                &chunk.content,
+                "entities_relarionships",
+                schema,
+                true,
+            )
+            .await?;
+        Ok(er)
     }
 }

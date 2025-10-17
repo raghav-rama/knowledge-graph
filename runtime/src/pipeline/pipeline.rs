@@ -10,15 +10,18 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::storage::{
-    DocProcessingStatus, DocStatus, DocStatusStorage, JsonKvStorage, KvStorage, StorageResult,
+use crate::{
+    ai::responses::ResponsesClient,
+    storage::{
+        DocProcessingStatus, DocStatus, DocStatusStorage, JsonKvStorage, KvStorage, StorageResult,
+    },
 };
 
 use super::{
     chunker::{ChunkConfig, Chunker},
     document_manager::DocumentManager,
     error_reporter::ErrorReporter,
-    extractor::DocumentExtractor,
+    extractor::{DocumentExtractor, EntityRelationshipExtract, EntityRelationshipExtractor},
     status_service::{DocStatusService, PendingDocument},
     utils::{TiktokenTokenizer, Tokenizer, compute_mdhash_id},
 };
@@ -63,6 +66,7 @@ pub struct Pipeline {
     doc_manager: DocumentManager,
     chunker: Arc<dyn Chunker>,
     extractor: Arc<dyn DocumentExtractor>,
+    entity_relationship_extractor: Arc<dyn EntityRelationshipExtractor>,
     status_service: DocStatusService,
     error_reporter: ErrorReporter,
     processing_lock: Arc<Mutex<()>>,
@@ -70,13 +74,18 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn new(storages: Arc<AppStorages>, doc_manager: DocumentManager) -> Self {
+    pub fn new(
+        storages: Arc<AppStorages>,
+        doc_manager: DocumentManager,
+        ai_client: Arc<ResponsesClient>,
+    ) -> Self {
         let tokenizer: Arc<dyn Tokenizer> =
             Arc::new(TiktokenTokenizer::new().expect("failed to initialize tokenizer"));
         let chunker = Arc::new(super::chunker::TokenizerChunker::new(tokenizer.clone()));
         let extractor = Arc::new(super::extractor::Utf8DocumentExtractor::new(
             doc_manager.file_repo(),
         ));
+        let entity_relationship_extractor = Arc::new(EntityRelationshipExtract::new(ai_client));
         let status_service =
             DocStatusService::new(storages.doc_status.clone(), storages.docs_storage());
         let error_reporter = ErrorReporter::new(storages.doc_status.clone());
@@ -87,6 +96,7 @@ impl Pipeline {
             PipelineConfig::default(),
             chunker,
             extractor,
+            entity_relationship_extractor,
             status_service,
             error_reporter,
         )
@@ -99,6 +109,7 @@ impl Pipeline {
         config: PipelineConfig,
         chunker: Arc<dyn Chunker>,
         extractor: Arc<dyn DocumentExtractor>,
+        entity_relationship_extractor: Arc<dyn EntityRelationshipExtractor>,
         status_service: DocStatusService,
         error_reporter: ErrorReporter,
     ) -> Self {
@@ -109,6 +120,7 @@ impl Pipeline {
             extractor,
             status_service,
             error_reporter,
+            entity_relationship_extractor,
             processing_lock: Arc::new(Mutex::new(())),
             config,
         }
@@ -202,6 +214,10 @@ impl Pipeline {
         };
 
         let chunks = self.chunker.chunk(content, &chunk_config)?;
+        let er = self
+            .entity_relationship_extractor
+            .extract_entities_and_relationships(&chunks[0])
+            .await?;
         if chunks.is_empty() {
             warn!(doc_id = %doc_id, "no chunks created for document");
         }

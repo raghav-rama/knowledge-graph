@@ -1,0 +1,180 @@
+{
+	"entities": [
+		{
+			"entity_description": "A naturally occurring \"body-own\" anti-inflammatory compound cited as effective and safe against influenza and the common cold; described as a natural compound for health management; identified in the text as a PPARα agonist; reported to activate and desensitize TRPV1 channels in sensory neurons; reported to counteract substance P–induced mast cell activation in vitro by stimulating diacylglycerol lipase activity; subject of receptor-search studies.",
+			"entity_name": "Palmitoylethanolamide",
+			"entity_type": "Drug / Compound / Chemical Substance"
+		},
+		{
+			"entity_description": "Ion channel protein in sensory neurons reported to be activated and desensitized by the PPARα agonist palmitoylethanolamide.",
+			"entity_name": "TRPV1 Channels",
+			"entity_type": "Protein"
+		},
+		{
+			"entity_description": "A receptor (PPARα) targeted by palmitoylethanolamide, which is described in the text as a PPARα agonist.",
+			"entity_name": "PPARα",
+			"entity_type": "Protein"
+		},
+		{
+			"entity_description": "An enzyme whose activity is reported to be stimulated by palmitoylethanolamide; stimulation of this enzyme by palmitoylethanolamide is reported to counteract substance P–induced mast cell activation in vitro.",
+			"entity_name": "Diacylglycerol Lipase",
+			"entity_type": "Protein"
+		},
+		{
+			"entity_description": "A signaling molecule cited in the text as inducing mast cell activation; palmitoylethanolamide is reported to counteract substance P–induced mast cell activation in vitro.",
+			"entity_name": "Substance P",
+			"entity_type": "Protein"
+		},
+		{
+			"entity_description": "An in vitro phenomenon induced by substance P and reported to be counteracted by palmitoylethanolamide via stimulation of diacylglycerol lipase activity.",
+			"entity_name": "Mast Cell Activation",
+			"entity_type": "Result / Observation / Finding"
+		},
+		{
+			"entity_description": "Referenced as the subject of a 2002 publication by Ueda N. (title: \"Endocannabinoid hydrolases\").",
+			"entity_name": "Endocannabinoid Hydrolases",
+			"entity_type": "Protein"
+		},
+		{
+			"entity_description": "An experimental high-fat diet specified as having a high C18:0/C16:0 ratio; reported by Wang et al. to induce worse metabolic and transcriptomic profiles in C57BL/6 mice.",
+			"entity_name": "High-Fat Diet With High C18:0/C16:0 Ratio",
+			"entity_type": "Material"
+		},
+		{
+			"entity_description": "The ratio of C18:0 to C16:0 fatty acids used as a parameter in the cited high-fat diet; a high C18:0/C16:0 ratio in the diet was associated with worse metabolic and transcriptomic profiles in C57BL/6 mice (Wang et al.).",
+			"entity_name": "C18:0/C16:0 Ratio",
+			"entity_type": "Measurement / Metric"
+		},
+		{
+			"entity_description": "A common laboratory mouse strain (C57BL/6) in which Wang et al. reported that a high-fat diet with a high C18:0/C16:0 ratio induced worse metabolic and transcriptomic profiles.",
+			"entity_name": "C57BL/6 Mice",
+			"entity_type": "Organism / Species"
+		},
+		{
+			"entity_description": "Metabolic and transcriptomic readouts that were reported to be worsened in C57BL/6 mice fed a high-fat diet with a high C18:0/C16:0 ratio (Wang et al.).",
+			"entity_name": "Metabolic and Transcriptomic Profiles",
+			"entity_type": "Result / Observation / Finding"
+		},
+		{
+			"entity_description": "Fatty acids studied by Donnelly et al. as being stored in the liver and secreted via lipoproteins in patients with nonalcoholic fatty liver disease.",
+			"entity_name": "Fatty Acids",
+			"entity_type": "Drug / Compound / Chemical Substance"
+		},
+		{
+			"entity_description": "The organ in which fatty acids are reported to be stored and from which they are secreted via lipoproteins in patients with nonalcoholic fatty liver disease (Donnelly et al.).",
+			"entity_name": "Liver",
+			"entity_type": "Organ"
+		},
+		{
+			"entity_description": "Particles via which fatty acids are reported to be secreted from the liver in patients with nonalcoholic fatty liver disease (described in Donnelly et al.).",
+			"entity_name": "Lipoproteins",
+			"entity_type": "Protein"
+		},
+		{
+			"entity_description": "A disease context (nonalcoholic fatty liver disease) in which sources of fatty acids stored in the liver and secreted via lipoproteins were examined.",
+			"entity_name": "Nonalcoholic Fatty Liver Disease",
+			"entity_type": "Disease / Disorder"
+		},
+		{
+			"entity_description": "A disease listed in the text as one against which palmitoylethanolamide was reported to be effective and safe (Keppel Hesselink et al.).",
+			"entity_name": "Influenza",
+			"entity_type": "Disease / Disorder"
+		},
+		{
+			"entity_description": "A disease (common cold) listed in the text as one against which palmitoylethanolamide was reported to be effective and safe (Keppel Hesselink et al.).",
+			"entity_name": "Common Cold",
+			"entity_type": "Disease / Disorder"
+		},
+		{
+			"entity_description": "The putative receptor for palmitoylethanolamide that was the subject of a search described by LoVerme et al. (2005) in the cited literature.",
+			"entity_name": "Palmitoylethanolamide Receptor",
+			"entity_type": "Protein"
+		}
+	],
+	"relationships": [
+		{
+			"relationship_description": "Palmitoylethanolamide is reported to be effective and safe against influenza.",
+			"relationship_keywords": ["therapeutic effect, safety"],
+			"source_entity": "Palmitoylethanolamide",
+			"target_entity": "Influenza"
+		},
+		{
+			"relationship_description": "Palmitoylethanolamide is reported to be effective and safe against the common cold.",
+			"relationship_keywords": ["therapeutic effect, safety"],
+			"source_entity": "Palmitoylethanolamide",
+			"target_entity": "Common Cold"
+		},
+		{
+			"relationship_description": "Palmitoylethanolamide is described in the text as a PPARα agonist (i.e., it acts on PPARα).",
+			"relationship_keywords": ["agonist, receptor activation"],
+			"source_entity": "Palmitoylethanolamide",
+			"target_entity": "PPARα"
+		},
+		{
+			"relationship_description": "The PPARα agonist palmitoylethanolamide is reported to activate and desensitize TRPV1 channels in sensory neurons.",
+			"relationship_keywords": ["activation, desensitization, sensory neurons"],
+			"source_entity": "Palmitoylethanolamide",
+			"target_entity": "TRPV1 Channels"
+		},
+		{
+			"relationship_description": "Palmitoylethanolamide is reported to stimulate diacylglycerol lipase activity.",
+			"relationship_keywords": ["enzyme stimulation, diacylglycerol lipase"],
+			"source_entity": "Palmitoylethanolamide",
+			"target_entity": "Diacylglycerol Lipase"
+		},
+		{
+			"relationship_description": "Palmitoylethanolamide is reported to counteract substance P–induced mast cell activation in vitro.",
+			"relationship_keywords": ["inhibition, counteraction, in vitro"],
+			"source_entity": "Palmitoylethanolamide",
+			"target_entity": "Mast Cell Activation"
+		},
+		{
+			"relationship_description": "Substance P is reported to induce mast cell activation (the activation that palmitoylethanolamide counteracts).",
+			"relationship_keywords": ["induction, activation"],
+			"source_entity": "Substance P",
+			"target_entity": "Mast Cell Activation"
+		},
+		{
+			"relationship_description": "Stimulation of diacylglycerol lipase activity by palmitoylethanolamide is reported to mediate the counteraction of substance P–induced mast cell activation.",
+			"relationship_keywords": ["mediator, enzyme activity"],
+			"source_entity": "Diacylglycerol Lipase",
+			"target_entity": "Mast Cell Activation"
+		},
+		{
+			"relationship_description": "A high-fat diet with a high C18:0/C16:0 ratio is reported to induce worse metabolic and transcriptomic profiles.",
+			"relationship_keywords": ["diet-induced effect, metabolic, transcriptomic"],
+			"source_entity": "High-Fat Diet With High C18:0/C16:0 Ratio",
+			"target_entity": "Metabolic and Transcriptomic Profiles"
+		},
+		{
+			"relationship_description": "The worsened metabolic and transcriptomic profiles were observed in C57BL/6 mice according to the cited study.",
+			"relationship_keywords": ["mouse model, observation"],
+			"source_entity": "Metabolic and Transcriptomic Profiles",
+			"target_entity": "C57BL/6 Mice"
+		},
+		{
+			"relationship_description": "Fatty acids are reported to be stored in the liver (study context: patients with nonalcoholic fatty liver disease).",
+			"relationship_keywords": ["storage, liver"],
+			"source_entity": "Fatty Acids",
+			"target_entity": "Liver"
+		},
+		{
+			"relationship_description": "Fatty acids are reported to be secreted via lipoproteins.",
+			"relationship_keywords": ["secretion, lipoprotein-mediated"],
+			"source_entity": "Fatty Acids",
+			"target_entity": "Lipoproteins"
+		},
+		{
+			"relationship_description": "Sources of fatty acids stored in the liver and secreted via lipoproteins were examined in patients with nonalcoholic fatty liver disease (linking fatty acids to the disease context).",
+			"relationship_keywords": ["disease association, NAFLD"],
+			"source_entity": "Fatty Acids",
+			"target_entity": "Nonalcoholic Fatty Liver Disease"
+		},
+		{
+			"relationship_description": "LoVerme et al. conducted a search for the palmitoylethanolamide receptor (publication subject linked to the receptor).",
+			"relationship_keywords": ["publication subject, receptor search"],
+			"source_entity": "Palmitoylethanolamide Receptor",
+			"target_entity": "Palmitoylethanolamide"
+		}
+	]
+}

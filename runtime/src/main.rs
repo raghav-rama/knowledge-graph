@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use axum::{Router, extract::State, http::StatusCode, routing::get};
+use dotenvy::dotenv;
 use serde::Deserialize;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{fs, net::TcpListener, signal};
@@ -13,6 +14,7 @@ mod ai;
 mod pipeline;
 mod routes;
 mod storage;
+use ai::responses::ResponsesClient;
 use pipeline::{AppStorages, DocumentManager, Pipeline};
 use storage::{
     DocStatusStorage, KvStorage, StorageManager, StoragesStatus,
@@ -36,6 +38,7 @@ pub(crate) struct AppState {
     storages: Arc<AppStorages>,
     pipeline: Arc<Pipeline>,
     storages_status: StoragesStatus,
+    ai_client: Arc<ResponsesClient>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +57,8 @@ async fn main() {
 
 async fn run() -> Result<()> {
     init_tracing();
+    dotenv().with_context(|| "Problem loading .env file")?;
+    let api_key = env::var("OPENAI_API_KEY").context("openai aapi key not set")?;
 
     let config = load_config()
         .await
@@ -125,13 +130,20 @@ async fn run() -> Result<()> {
     )
     .await?;
 
-    let pipeline = Arc::new(Pipeline::new(storages.clone(), document_manager));
+    let ai_client = Arc::new(ResponsesClient::new(api_key, None));
+
+    let pipeline = Arc::new(Pipeline::new(
+        storages.clone(),
+        document_manager,
+        ai_client.clone(),
+    ));
 
     let state = Arc::new(AppState {
         config: Arc::new(config.clone()),
         storages,
         pipeline,
         storages_status: storage_manager.status(),
+        ai_client,
     });
 
     let addr_string = format!("{}:{}", config.server.host, config.server.port);
