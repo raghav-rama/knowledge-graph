@@ -10,13 +10,37 @@
 	let { data }: PageProps = $props();
 
 	type FilterId = 'all' | DocumentRow['status'];
+	type StatusTone = 'positive' | 'warning' | 'negative';
 
+	type BackendDocument = {
+		id: string;
+		summary: string;
+		status: string;
+		length: number;
+		chunks: number;
+		created_at?: string | null;
+		updated_at?: string | null;
+	};
+
+	type DocumentListResponse = {
+		total: number;
+		documents: BackendDocument[];
+	};
+
+	const backendGreeting: string | null = data.greeting ?? null;
+
+	let documents = $state<DocumentRow[]>(data.documents ?? []);
 	let activeFilter = $state<FilterId>('all');
 	let selectedId = $state<string | null>(null);
 	let sortState = $state<{ column: keyof DocumentRow; direction: 'asc' | 'desc' } | null>({
 		column: 'updated',
 		direction: 'desc'
 	});
+
+	let statusMessage = $state<string>(backendGreeting ?? 'Unable to reach backend');
+	let statusTone = $state<StatusTone>(backendGreeting ? 'positive' : 'warning');
+	let isUploading = $state(false);
+	let fileInput: HTMLInputElement | null = null;
 
 	const navTabs: NavTab[] = [
 		{ label: 'Documents', active: true },
@@ -29,10 +53,15 @@
 		{ id: 'pipeline', label: 'Pipeline Status', variant: 'secondary', icon: '⚙' }
 	];
 
-	const toolbarRightActions: ToolbarAction[] = [
+	const toolbarRightActions = $derived<ToolbarAction[]>([
 		{ id: 'clear', label: 'Clear', variant: 'ghost' },
-		{ id: 'upload', label: 'Upload', variant: 'primary', icon: '↑' }
-	];
+		{
+			id: 'upload',
+			label: isUploading ? 'Uploading…' : 'Upload',
+			variant: 'primary',
+			icon: isUploading ? '⏳' : '↑'
+		}
+	]);
 
 	const baseFilters: FilterChip[] = [
 		{ id: 'all', label: 'All', count: 0 },
@@ -41,10 +70,6 @@
 		{ id: 'Pending', label: 'Pending', count: 0 },
 		{ id: 'Failed', label: 'Failed', count: 0 }
 	];
-
-	const documents = $derived((data.documents ?? []) as DocumentRow[]);
-	const backendGreeting = $derived((data.greeting ?? null) as string | null);
-	const statusMessage = $derived(backendGreeting ?? 'Unable to reach backend');
 
 	const filterChips = $derived(
 		baseFilters.map((entry) => ({
@@ -90,8 +115,83 @@
 		});
 	});
 
+	const toDocumentStatus = (status: string): DocumentRow['status'] => {
+		switch (status) {
+			case 'Completed':
+			case 'Processing':
+			case 'Pending':
+			case 'Failed':
+				return status;
+			default:
+				return 'Pending';
+		}
+	};
+
+	const formatTimestamp = (value?: string | null): string => {
+		if (!value) {
+			return '—';
+		}
+
+		const date = new Date(value);
+		return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+	};
+
+	const mapDocument = (doc: BackendDocument): DocumentRow => ({
+		id: doc.id,
+		summary: doc.summary,
+		status: toDocumentStatus(doc.status),
+		length: doc.length ?? 0,
+		chunks: doc.chunks ?? 0,
+		created: formatTimestamp(doc.created_at),
+		updated: formatTimestamp(doc.updated_at)
+	});
+
+	const refreshDocuments = async (showStatus = false) => {
+		try {
+			const response = await fetch('/api/documents');
+			if (!response.ok) {
+				throw new Error(`${response.status} ${response.statusText}`);
+			}
+			const payload = (await response.json()) as DocumentListResponse;
+			if (!Array.isArray(payload.documents)) {
+				throw new Error('Malformed response from server');
+			}
+			const mapped = payload.documents.map(mapDocument);
+			documents = mapped;
+			if (selectedId && !mapped.some((doc) => doc.id === selectedId)) {
+				selectedId = null;
+			}
+			if (showStatus) {
+				statusTone = 'positive';
+				statusMessage = `Loaded ${mapped.length} documents`;
+			}
+		} catch (error) {
+			console.error('Failed to refresh documents', error);
+			statusTone = 'negative';
+			statusMessage =
+				error instanceof Error ? `Refresh failed: ${error.message}` : 'Refresh failed';
+		}
+	};
+
 	const handleToolbarSelect = (action: ToolbarAction) => {
-		console.info(`Toolbar action triggered: ${action.id}`);
+		switch (action.id) {
+			case 'upload':
+				if (!isUploading && fileInput) {
+					fileInput.click();
+				}
+				break;
+			case 'clear':
+				selectedId = null;
+				break;
+			case 'scan':
+			case 'pipeline':
+				if (!isUploading) {
+					void refreshDocuments(true);
+				}
+				break;
+			default:
+				console.info(`Unhandled toolbar action: ${action.id}`);
+		}
 	};
 
 	const handleFilterChange = (id: string) => {
@@ -99,7 +199,9 @@
 	};
 
 	const handleRefreshFilters = () => {
-		console.info('Refresh filters requested');
+		if (!isUploading) {
+			void refreshDocuments(true);
+		}
 	};
 
 	const handleDocumentSelect = (id: string) => {
@@ -116,6 +218,61 @@
 			sortState = { column, direction: 'desc' };
 		}
 	};
+
+	const handleFileChange = async (event: Event) => {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) {
+			return;
+		}
+
+		isUploading = true;
+		statusTone = 'warning';
+		statusMessage = `Uploading ${file.name}…`;
+
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+
+			const response = await fetch('/api/documents/upload', {
+				method: 'POST',
+				body: formData
+			});
+
+			const payload = await response.json().catch(() => null);
+
+			if (!response.ok) {
+				const message =
+					(payload && typeof payload.message === 'string'
+						? payload.message
+						: response.statusText) || 'Upload failed';
+				throw new Error(message);
+			}
+
+			const status = payload?.status ?? 'success';
+			const message =
+				(payload && typeof payload.message === 'string'
+					? payload.message
+					: `Upload completed for ${file.name}`) || `Upload completed for ${file.name}`;
+
+			statusTone = status === 'success' ? 'positive' : 'warning';
+			statusMessage = message;
+
+			await refreshDocuments(false);
+		} catch (error) {
+			console.error('Document upload failed', error);
+			statusTone = 'negative';
+			statusMessage =
+				error instanceof Error
+					? `Upload failed: ${error.message}`
+					: 'Upload failed due to an unexpected error';
+		} finally {
+			isUploading = false;
+			if (fileInput) {
+				fileInput.value = '';
+			}
+		}
+	};
 </script>
 
 {#snippet topnav()}
@@ -129,7 +286,7 @@
 {/snippet}
 
 {#snippet footer()}
-	<StatusFooter label={statusMessage} tone={backendGreeting ? 'positive' : 'warning'} />
+	<StatusFooter label={statusMessage} tone={statusTone} />
 {/snippet}
 
 <AppShell
@@ -143,6 +300,14 @@
 		actions={toolbarActions}
 		rightActions={toolbarRightActions}
 		onSelect={handleToolbarSelect}
+	/>
+
+	<input
+		type="file"
+		accept=".txt,.md,.json,.csv,.log,.conf,.ini"
+		class="hidden-file-input"
+		bind:this={fileInput}
+		onchange={handleFileChange}
 	/>
 
 	<section class="panel">
@@ -194,6 +359,17 @@
 	.panel__header p {
 		margin: 0;
 		color: rgba(28, 49, 68, 0.6);
+	}
+
+	.hidden-file-input {
+		position: absolute;
+		width: 0.1px;
+		height: 0.1px;
+		opacity: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	@media (max-width: 900px) {

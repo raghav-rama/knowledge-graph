@@ -190,16 +190,16 @@ fn config_path() -> PathBuf {
 }
 
 async fn handler(State(state): State<Arc<AppState>>) -> Result<String, StatusCode> {
-    let docs = state
+    let _docs = state
         .storages
         .doc_status
         .docs_paginated(None, 1, 10, "updated_at", "desc")
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    info!("HIT - {:?}", docs);
-    Ok("docs.0".to_owned())
+    Ok("Connected".to_owned())
 }
 
+#[inline]
 async fn health() -> &'static str {
     "ok"
 }

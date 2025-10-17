@@ -4,12 +4,11 @@ use axum::{
     Json, Router,
     extract::{Multipart, State},
     http::StatusCode,
-    response::IntoResponse,
-    routing::post,
+    routing::{get, post},
 };
 use serde::Serialize;
 use tokio::fs;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::AppState;
 
@@ -20,8 +19,74 @@ struct InsertResponse {
     track_id: String,
 }
 
+#[derive(Serialize)]
+struct DocumentListResponse {
+    total: usize,
+    documents: Vec<DocumentSummary>,
+}
+
+#[derive(Serialize)]
+struct DocumentSummary {
+    id: String,
+    summary: String,
+    status: String,
+    length: i64,
+    chunks: usize,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    file_path: Option<String>,
+    track_id: Option<String>,
+}
+
 pub fn document_routes() -> Router<Arc<AppState>> {
-    Router::new().route("/documents/upload", post(upload_to_input_dir))
+    Router::new()
+        .route("/documents/upload", post(upload_to_input_dir))
+        .route("/documents", get(list_documents))
+}
+
+async fn list_documents(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DocumentListResponse>, (StatusCode, String)> {
+    let (records, total) = state
+        .storages
+        .doc_status
+        .docs_paginated(None, 1, 200, "updated_at", "desc")
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to load documents: {err}"),
+            )
+        })?;
+
+    let documents = records
+        .into_iter()
+        .map(|(id, status)| {
+            let summary = status
+                .content_summary
+                .clone()
+                .or_else(|| status.file_path.clone())
+                .unwrap_or_else(|| "No summary available".to_string());
+
+            DocumentSummary {
+                id: id.clone(),
+                summary,
+                status: map_status(&status.status),
+                length: status.content_length.unwrap_or_default(),
+                chunks: status
+                    .chunks_list
+                    .as_ref()
+                    .map(|chunks| chunks.len())
+                    .unwrap_or_default(),
+                created_at: status.created_at.clone(),
+                updated_at: status.updated_at.clone(),
+                file_path: status.file_path.clone(),
+                track_id: status.track_id.clone(),
+            }
+        })
+        .collect();
+
+    Ok(Json(DocumentListResponse { total, documents }))
 }
 
 async fn upload_to_input_dir(
@@ -159,4 +224,15 @@ async fn upload_to_input_dir(
         ),
         track_id,
     }))
+}
+
+fn map_status(status: &crate::storage::DocStatus) -> String {
+    use crate::storage::DocStatus;
+    match status {
+        DocStatus::PROCESSED => "Completed".to_string(),
+        DocStatus::PROCESSING => "Processing".to_string(),
+        DocStatus::PENDING => "Pending".to_string(),
+        DocStatus::FAILED => "Failed".to_string(),
+        DocStatus::ALL => "All".to_string(),
+    }
 }
