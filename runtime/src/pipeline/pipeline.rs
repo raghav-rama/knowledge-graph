@@ -215,7 +215,7 @@ impl Pipeline {
         };
 
         let chunks = self.chunker.chunk(content, &chunk_config)?;
-        let _extraction_results = stream::iter(chunks.iter().cloned())
+        let extraction_results: Vec<EntitiesRelationships> = stream::iter(chunks.iter().cloned())
             .map(|chunk| {
                 let extractor = Arc::clone(&self.entity_relationship_extractor);
                 async move { extractor.extract_entities_and_relationships(&chunk).await }
@@ -228,27 +228,132 @@ impl Pipeline {
             warn!(doc_id = %doc_id, "no chunks created for document");
         }
 
+        if extraction_results.len() != chunks.len() {
+            warn!(
+                doc_id = %doc_id,
+                chunks = chunks.len(),
+                extractions = extraction_results.len(),
+                "extraction results length does not match chunk count"
+            );
+        }
+
         let chunk_ids: Vec<String> = chunks.iter().map(|chunk| chunk.id.clone()).collect();
         self.status_service
             .mark_processing(doc_id, status, &chunk_ids)
             .await?;
 
         let chunk_map: HashMap<String, Value> = chunks
-            .into_iter()
+            .iter()
             .map(|chunk| {
                 let obj = json!({
-                    "content": chunk.content,
+                    "content": chunk.content.clone(),
                     "full_doc_id": doc_id,
                     "chunk_order_index": chunk.order,
                     "file_path": status.file_path.clone().unwrap_or_default(),
                     "tokens": chunk.token_count,
                 });
-                (chunk.id, obj)
+                (chunk.id.clone(), obj)
             })
             .collect();
 
         if !chunk_map.is_empty() {
             self.storages.text_chunks.upsert(chunk_map).await?;
+        }
+
+        let mut entities_payload: HashMap<String, Value> = HashMap::new();
+        let mut relations_payload: HashMap<String, Value> = HashMap::new();
+        let mut entity_index: HashMap<String, String> = HashMap::new();
+
+        for (chunk, extraction) in chunks.iter().zip(extraction_results.iter()) {
+            for entity in extraction.entities.iter() {
+                let key = format!(
+                    "{}::{}",
+                    doc_id,
+                    entity.entity_name.trim().to_ascii_lowercase()
+                );
+                let entry = entity_index.entry(key.clone());
+                let entity_id = entry.or_insert_with(|| {
+                    compute_mdhash_id(
+                        &format!(
+                            "{}:{}:{}",
+                            doc_id,
+                            entity.entity_name,
+                            entity.entity_type.as_str()
+                        ),
+                        "entity-",
+                    )
+                });
+
+                entities_payload
+                    .entry(entity_id.clone())
+                    .or_insert_with(|| {
+                        json!({
+                            "entity_name": entity.entity_name,
+                            "entity_type": entity.entity_type.as_str(),
+                            "entity_description": entity.entity_description,
+                            "doc_id": doc_id,
+                            "chunk_id": chunk.id,
+                            "chunk_order_index": chunk.order,
+                        })
+                    });
+            }
+
+            for relationship in extraction.relationships.iter() {
+                let source_key = format!(
+                    "{}::{}",
+                    doc_id,
+                    relationship.source_entity.trim().to_ascii_lowercase()
+                );
+                let target_key = format!(
+                    "{}::{}",
+                    doc_id,
+                    relationship.target_entity.trim().to_ascii_lowercase()
+                );
+
+                let source_id = entity_index.get(&source_key).cloned();
+                let target_id = entity_index.get(&target_key).cloned();
+
+                let (Some(source_id), Some(target_id)) = (source_id, target_id) else {
+                    warn!(
+                        doc_id = %doc_id,
+                        chunk_id = %chunk.id,
+                        source = %relationship.source_entity,
+                        target = %relationship.target_entity,
+                        "relationship references unknown entity"
+                    );
+                    continue;
+                };
+
+                let relation_id = compute_mdhash_id(
+                    &format!(
+                        "{}:{}:{}:{}",
+                        doc_id, source_id, target_id, relationship.relationship_description
+                    ),
+                    "relation-",
+                );
+
+                relations_payload.entry(relation_id).or_insert_with(|| {
+                    json!({
+                        "doc_id": doc_id,
+                        "chunk_id": chunk.id,
+                        "source_entity_id": source_id,
+                        "target_entity_id": target_id,
+                        "relationship_keywords": relationship.relationship_keywords,
+                        "relationship_description": relationship.relationship_description,
+                    })
+                });
+            }
+        }
+
+        if !entities_payload.is_empty() {
+            self.storages.full_entities.upsert(entities_payload).await?;
+        }
+
+        if !relations_payload.is_empty() {
+            self.storages
+                .full_relations
+                .upsert(relations_payload)
+                .await?;
         }
 
         self.persist_all().await?;

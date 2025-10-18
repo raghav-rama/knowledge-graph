@@ -1,7 +1,7 @@
 use reqwest::{Client, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use std::time::Duration;
+use tokio::time::{Duration, sleep};
 
 pub struct ResponsesClient {
     http: Client,
@@ -89,6 +89,56 @@ impl ResponsesClient {
         }
     }
 
+    async fn poll_oai_response(&self, raw_response: Value, path: &str) -> anyhow::Result<Value> {
+        if let Some(id) = raw_response.get("id").and_then(|v| v.as_str()) {
+            loop {
+                match self
+                    .http
+                    .get(format!("{}/v1{}/{id}", self.base, path))
+                    .bearer_auth(&self.api_key)
+                    .send()
+                    .await
+                {
+                    Ok(res) => {
+                        if res.status().is_success() {
+                            let v: Value = res.json().await?;
+                            if let Some(status) = v.get("status").and_then(|v| v.as_str()) {
+                                match status {
+                                    "completed" => return Ok(v),
+                                    "failed" | "cancelled" => {
+                                        let detail = v
+                                            .get("error")
+                                            .and_then(|e| e.get("message").and_then(|m| m.as_str()))
+                                            .or_else(|| {
+                                                v.get("last_error").and_then(|e| {
+                                                    e.get("message").and_then(|m| m.as_str())
+                                                })
+                                            });
+                                        if let Some(detail) = detail {
+                                            anyhow::bail!(
+                                                "OpenAI background response {} | {}",
+                                                status,
+                                                detail
+                                            );
+                                        }
+                                        anyhow::bail!("OpenAI background response {}", status);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        } else {
+                            let err_txt = res.text().await?;
+                            anyhow::bail!("{}", err_txt)
+                        }
+                    }
+                    Err(err) => anyhow::bail!("Network error | {err}"),
+                }
+                sleep(Duration::from_secs(2)).await;
+            }
+        }
+        anyhow::bail!("Error polling OpenAI background responses")
+    }
+
     async fn post_json(&self, path: &str, body: &Value) -> reqwest::Result<reqwest::Response> {
         self.http
             .post(format!("{}/v1{}", self.base, path))
@@ -121,7 +171,9 @@ impl ResponsesClient {
                 { "role": "user",   "content": [{ "type": "input_text", "text": user }] }
             ],
             "text": {"format": response_format},
-            "reasoning": {"effort":"high"}
+            "reasoning": {"effort":"high"},
+            "service_tier": "flex",
+            "background": true,
         });
 
         let mut delay = Duration::from_millis(300);
@@ -129,6 +181,7 @@ impl ResponsesClient {
             let resp = self.post_json("/responses", &body).await?;
             if resp.status().is_success() {
                 let v: Value = resp.json().await?;
+                let v = self.poll_oai_response(v, "/responses").await?;
                 if let Some(parsed) = Self::extract_structured_output(&v) {
                     return Ok(parsed);
                 }

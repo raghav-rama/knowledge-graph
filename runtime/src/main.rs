@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
 
 use anyhow::{Context, Result};
 use axum::{Router, extract::State, http::StatusCode, routing::get};
