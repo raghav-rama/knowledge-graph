@@ -5,13 +5,14 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
+use futures::stream::{self, StreamExt, TryStreamExt};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    ai::responses::ResponsesClient,
+    ai::{responses::ResponsesClient, schemas::EntitiesRelationships},
     storage::{
         DocProcessingStatus, DocStatus, DocStatusStorage, JsonKvStorage, KvStorage, StorageResult,
     },
@@ -214,10 +215,15 @@ impl Pipeline {
         };
 
         let chunks = self.chunker.chunk(content, &chunk_config)?;
-        let er = self
-            .entity_relationship_extractor
-            .extract_entities_and_relationships(&chunks[0])
+        let _extraction_results = stream::iter(chunks.iter().cloned())
+            .map(|chunk| {
+                let extractor = Arc::clone(&self.entity_relationship_extractor);
+                async move { extractor.extract_entities_and_relationships(&chunk).await }
+            })
+            .buffer_unordered(8)
+            .try_collect::<Vec<_>>()
             .await?;
+
         if chunks.is_empty() {
             warn!(doc_id = %doc_id, "no chunks created for document");
         }

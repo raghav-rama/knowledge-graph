@@ -181,7 +181,7 @@ pub struct ExtractedRelationship {
     pub relationship_description: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct EntitiesRelationships {
     pub entities: Vec<ExtractedEntity>,
     pub relationships: Vec<ExtractedRelationship>,
