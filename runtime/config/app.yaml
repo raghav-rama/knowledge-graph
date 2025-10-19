@@ -1,6 +1,16 @@
 server:
   host: 127.0.0.1
   port: 42069
+llm:
+  max_concurrent_chunks: 10 # maximum number of chunks to process at a time
+  model: gpt-5-mini
+  reasoning_effort: high
+  verbosity: medium
+chunk_config:
+  max_tokens: 500
+  overlap: 50
+  split_by_character: null
+  split_by_character_only: false
 messages:
   greeting: "Hello, World from Axum!!"
 working_dir: "pgv-data"
