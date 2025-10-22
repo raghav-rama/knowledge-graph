@@ -220,7 +220,7 @@ impl Pipeline {
                 let extractor = Arc::clone(&self.entity_relationship_extractor);
                 async move { extractor.extract_entities_and_relationships(&chunk).await }
             })
-            .buffer_unordered(8)
+            .buffer_unordered(10)
             .try_collect::<Vec<_>>()
             .await?;
 

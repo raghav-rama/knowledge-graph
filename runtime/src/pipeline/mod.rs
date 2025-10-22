@@ -1,9 +1,9 @@
-mod chunker;
-mod document_manager;
-mod error_reporter;
-mod extractor;
-mod pipeline;
-mod status_service;
+pub mod chunker;
+pub mod document_manager;
+pub mod error_reporter;
+pub mod extractor;
+pub mod pipeline;
+pub mod status_service;
 
 pub mod utils;
 

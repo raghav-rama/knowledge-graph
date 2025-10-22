@@ -1,4 +1,5 @@
-use anyhow::{Result, anyhow};
+use crate::storage::{JsonKvStorage, KvStorage};
+use anyhow::{Ok, Result, anyhow};
 use tiktoken_rs::{CoreBPE, o200k_base};
 
 pub trait Tokenizer: Send + Sync {
@@ -122,4 +123,15 @@ pub fn compute_mdhash_id(content: &str, prefix: &str) -> String {
     hasher.update(content.as_bytes());
     let digest = hasher.finalize();
     format!("{}{:x}", prefix, digest)
+}
+
+pub async fn get_entities_as_arr(entities: &JsonKvStorage) -> Result<Vec<String>> {
+    let all_entities = entities.get_all().await?;
+    let mut entities = Vec::new();
+    for value in all_entities.values() {
+        if let Some(entity_name) = value.get("entity_name").and_then(|e| e.as_str()) {
+            entities.push(entity_name.to_owned());
+        };
+    }
+    Ok(entities)
 }
