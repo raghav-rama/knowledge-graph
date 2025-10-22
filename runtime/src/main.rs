@@ -24,8 +24,7 @@ use storage::{
 };
 
 const DEFAULT_CONFIG_PATH: &str = "config/app.yaml";
-pub(crate) const SUPPORTED_EXTENSIONS: &[&str] =
-    &[".txt", ".md", ".json", ".csv", ".log", ".conf", ".ini"];
+pub(crate) const SUPPORTED_EXTENSIONS: &[&str] = &[".txt", ".md", ".json", ".csv"];
 
 #[derive(Debug, Clone, Deserialize)]
 struct AppConfig {
