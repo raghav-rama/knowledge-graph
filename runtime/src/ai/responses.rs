@@ -1,3 +1,4 @@
+use anyhow::Context;
 use reqwest::{Client, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -101,7 +102,9 @@ impl ResponsesClient {
                 {
                     Ok(res) => {
                         if res.status().is_success() {
-                            let v: Value = res.json().await?;
+                            let v: Value = res.json().await.with_context(|| {
+                                format!("Error getting OpenAI respose with id: {id}")
+                            })?;
                             if let Some(status) = v.get("status").and_then(|v| v.as_str()) {
                                 match status {
                                     "completed" => return Ok(v),
@@ -180,8 +183,14 @@ impl ResponsesClient {
         for attempt in 0..5 {
             let resp = self.post_json("/responses", &body).await?;
             if resp.status().is_success() {
-                let v: Value = resp.json().await?;
-                let v = self.poll_oai_response(v, "/responses").await?;
+                let v: Value = resp
+                    .json()
+                    .await
+                    .with_context(|| "Error from OpenAI responses api")?;
+                let v = self
+                    .poll_oai_response(v, "/responses")
+                    .await
+                    .with_context(|| "Error polling OpenAI responses api")?;
                 if let Some(parsed) = Self::extract_structured_output(&v) {
                     return Ok(parsed);
                 }
@@ -200,7 +209,11 @@ impl ResponsesClient {
             }
 
             let status = resp.status();
-            let err_txt = resp.text().await.unwrap_or_default();
+            let err_txt = resp
+                .text()
+                .await
+                .with_context(|| "Error getting error text from OpenAI")
+                .unwrap_or_default();
             anyhow::bail!("OpenAI error {}: {}", status, err_txt);
         }
         anyhow::bail!("Retries exhausted")

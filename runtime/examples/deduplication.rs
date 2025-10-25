@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let entities = get_entities_as_arr(&full_entities).await.unwrap();
     let entities = entities
         .iter()
-        .take(20)
+        .take(2000)
         .map(|e| e.as_str())
         .collect::<Vec<&str>>();
     let tbl = create_table(&db, &entities).await?;
@@ -123,7 +123,7 @@ async fn search_index(
 
         let mut stream = table
             .vector_search(query_vector)?
-            .limit(50)
+            .limit(5)
             .execute()
             .await?;
 
