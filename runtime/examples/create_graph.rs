@@ -84,7 +84,11 @@ async fn main() -> Result<()> {
         graph.add_edge(source_idx, target_idx, relation);
     }
 
-    println!("Knowledge graph created ({} nodes, {} edges)", graph.node_count(), graph.edge_count());
+    println!(
+        "Knowledge graph created ({} nodes, {} edges)",
+        graph.node_count(),
+        graph.edge_count()
+    );
 
     let dot_repr = render_graph(&graph, &nodes_by_doc);
     tokio::fs::write("graph.dot", dot_repr).await?;
