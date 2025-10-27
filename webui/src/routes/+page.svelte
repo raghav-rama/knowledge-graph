@@ -2,12 +2,15 @@
 	import AppShell from '$lib/components/AppShell.svelte';
 	import DocumentTable, { type DocumentRow } from '$lib/components/DocumentTable.svelte';
 	import FilterChips, { type FilterChip } from '$lib/components/FilterChips.svelte';
+	import KnowledgeGraph from '$lib/components/KnowledgeGraph.svelte';
 	import StatusFooter from '$lib/components/StatusFooter.svelte';
 	import Toolbar, { type ToolbarAction } from '$lib/components/Toolbar.svelte';
 	import TopNav, { type NavTab } from '$lib/components/TopNav.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	type TabLabel = 'Documents' | 'Knowledge Graph' | 'API';
 
 	type FilterId = 'all' | DocumentRow['status'];
 	type StatusTone = 'positive' | 'warning' | 'negative';
@@ -40,13 +43,31 @@
 	let statusMessage = $state<string>(backendGreeting ?? 'Unable to reach backend');
 	let statusTone = $state<StatusTone>(backendGreeting ? 'positive' : 'warning');
 	let isUploading = $state(false);
-	let fileInput: HTMLInputElement | null = null;
+	let fileInput: HTMLInputElement | null = $state(null);
 
-	const navTabs: NavTab[] = [
+	let navTabs = $state<NavTab[]>([
 		{ label: 'Documents', active: true },
 		{ label: 'Knowledge Graph' },
 		{ label: 'API' }
-	];
+	]);
+
+	const activeTab = $derived<() => TabLabel>(() => {
+		const current = navTabs.find((tab) => tab.active)?.label;
+		return (current as TabLabel) ?? 'Documents';
+	});
+
+	const setActiveTab = (label: TabLabel) => {
+		navTabs = navTabs.map((tab) => ({
+			...tab,
+			active: tab.label === label
+		}));
+	};
+
+	const handleTabClick = (tab: NavTab) => {
+		if (tab.label === 'Documents' || tab.label === 'Knowledge Graph' || tab.label === 'API') {
+			setActiveTab(tab.label);
+		}
+	};
 
 	const toolbarActions: ToolbarAction[] = [
 		{ id: 'scan', label: 'Scan', variant: 'primary', icon: '⎙' },
@@ -281,7 +302,7 @@
 		workspace="Aubrai"
 		tabs={navTabs}
 		version="v0.0.1"
-		onTabClick={(tab) => console.info('Tab clicked', tab.label)}
+		onTabClick={handleTabClick}
 	/>
 {/snippet}
 
@@ -295,42 +316,55 @@
 	{topnav}
 	{footer}
 >
-	<Toolbar
-		title="Document Management"
-		actions={toolbarActions}
-		rightActions={toolbarRightActions}
-		onSelect={handleToolbarSelect}
-	/>
-
-	<input
-		type="file"
-		accept=".txt,.md,.json,.csv,.log,.conf,.ini"
-		class="hidden-file-input"
-		bind:this={fileInput}
-		onchange={handleFileChange}
-	/>
-
-	<section class="panel">
-		<header class="panel__header">
-			<div>
-				<h2>Uploaded Documents</h2>
-				<p>{statusMessage}</p>
-			</div>
-			<FilterChips
-				filters={filterChips}
-				activeId={activeFilter}
-				onChange={handleFilterChange}
-				onRefresh={handleRefreshFilters}
-			/>
-		</header>
-
-		<DocumentTable
-			documents={sortedDocuments}
-			{selectedId}
-			onSelect={handleDocumentSelect}
-			onSort={handleSort}
+	{#if activeTab() === 'Knowledge Graph'}
+		<KnowledgeGraph />
+	{:else if activeTab() === 'API'}
+		<section class="panel panel--placeholder">
+			<header class="panel__header">
+				<div>
+					<h2>API Console</h2>
+					<p>API tools coming soon.</p>
+				</div>
+			</header>
+		</section>
+	{:else}
+		<Toolbar
+			title="Document Management"
+			actions={toolbarActions}
+			rightActions={toolbarRightActions}
+			onSelect={handleToolbarSelect}
 		/>
-	</section>
+
+		<input
+			type="file"
+			accept=".txt,.md,.json,.csv,.log,.conf,.ini"
+			class="hidden-file-input"
+			bind:this={fileInput}
+			onchange={handleFileChange}
+		/>
+
+		<section class="panel">
+			<header class="panel__header">
+				<div>
+					<h2>Uploaded Documents</h2>
+					<p>{statusMessage}</p>
+				</div>
+				<FilterChips
+					filters={filterChips}
+					activeId={activeFilter}
+					onChange={handleFilterChange}
+					onRefresh={handleRefreshFilters}
+				/>
+			</header>
+
+			<DocumentTable
+				documents={sortedDocuments}
+				{selectedId}
+				onSelect={handleDocumentSelect}
+				onSort={handleSort}
+			/>
+		</section>
+	{/if}
 </AppShell>
 
 <style>
@@ -377,5 +411,9 @@
 			flex-direction: column;
 			align-items: flex-start;
 		}
+	}
+
+	.panel--placeholder {
+		margin: 1.5rem 0;
 	}
 </style>

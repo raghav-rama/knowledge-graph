@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
         graph.edge_count()
     );
 
-    traverse_symptom_to_disease(&graph, Some("oxidative stress"), 6, 3, 50);
+    traverse_symptom_to_disease(&graph, Some("Cognitive impairment"), 6, 3, 50);
     Ok(())
 }
 
@@ -179,13 +179,13 @@ fn bfs_symptom_to_diseases(
             }
         }
 
-        for v in graph.neighbors_directed(u, Direction::Outgoing) {
-            if !visited.contains(&v) {
-                visited.insert(v);
-                parent.insert(v, u);
-                queue.push_back((v, d + 1));
-            }
-        }
+        // for v in graph.neighbors_directed(u, Direction::Outgoing) {
+        //     if !visited.contains(&v) {
+        //         visited.insert(v);
+        //         parent.insert(v, u);
+        //         queue.push_back((v, d + 1));
+        //     }
+        // }
         for v in neighbors(graph, u, &walk_direction) {
             if visited.insert(v) {
                 parent.insert(v, u);

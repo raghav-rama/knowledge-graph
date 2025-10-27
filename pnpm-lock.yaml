@@ -6,8 +6,11 @@ settings:
 
 importers:
 
-  frontend:
+  webui:
     dependencies:
+      cytoscape:
+        specifier: ^3.33.1
+        version: 3.33.1
       postgres:
         specifier: ^3.4.5
         version: 3.4.7
@@ -1025,6 +1028,10 @@ packages:
     resolution: {integrity: sha512-/Tb/JcjK111nNScGob5MNtsntNM1aCNUDipB/TkwZFhyDrrE47SOx/18wF2bbjgc3ZzCSKW1T5nt5EbFoAz/Vg==}
     engines: {node: '>=4'}
     hasBin: true
+
+  cytoscape@3.33.1:
+    resolution: {integrity: sha512-iJc4TwyANnOGR1OmWhsS9ayRS3s+XQ185FmuHObThD+5AeJCakAAbWv8KimMTt08xCCLNgneQwFp+JRJOr9qGQ==}
+    engines: {node: '>=0.10'}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -2623,6 +2630,8 @@ snapshots:
       which: 2.0.2
 
   cssesc@3.0.0: {}
+
+  cytoscape@3.33.1: {}
 
   debug@4.4.3:
     dependencies:
