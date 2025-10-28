@@ -1,47 +1,111 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import cytoscape from 'cytoscape';
+	import { z } from 'zod';
+	import type { EntityResponse } from '$lib/codegen/types/EntityResponse';
+	import type { GraphResponse } from '$lib/codegen/types/GraphResponse';
+	import type { RelationshipEdgeResponse } from '$lib/codegen/types/RelationshipEdgeResponse';
+
+	const entitySchema = z.object({
+		id: z.string(),
+		entity_name: z.string(),
+		entity_description: z.string(),
+		entity_type: z.string()
+	}) satisfies z.ZodType<EntityResponse>;
+
+	const relationshipSchema = z.object({
+		id: z.string(),
+		source_node_id: z.string(),
+		target_node_id: z.string(),
+		relation_description: z.string()
+	}) satisfies z.ZodType<RelationshipEdgeResponse>;
+
+	const graphResponseSchema = z.object({
+		entities: z.array(entitySchema),
+		relations: z.array(relationshipSchema)
+	}) satisfies z.ZodType<GraphResponse>;
 
 	let graphContainer: HTMLDivElement | null = null;
 	let cy: cytoscape.Core | null = null;
+	let loadError: string | null = null;
 
-	const cytoscapeConfig: Omit<cytoscape.CytoscapeOptions, 'container'> = {
-		elements: [
-			{
-				data: { id: 'a', description: 'Node A desc' }
-			},
-			{
-				data: { id: 'b', description: 'Node B desc' }
-			},
-			{
-				data: { id: 'ab', source: 'a', target: 'b', description: 'Edge A <-> B desc' }
-			}
-		],
+	function mapEntitiesRelations(obj: GraphResponse) {
+		const entities = obj.entities.map((e) => {
+			return {
+				data: {
+					id: e.id,
+					description: e.entity_description,
+					type: e.entity_type,
+					name: e.entity_name
+				}
+			};
+		});
+		const relations = obj.relations.map((e) => {
+			return {
+				data: {
+					source: e.source_node_id,
+					target: e.target_node_id,
+					description: e.relation_description
+				}
+			};
+		});
+		return [...entities, ...relations];
+	}
+
+	const cytoscapeConfig: Omit<cytoscape.CytoscapeOptions, 'container' | 'elements'> = {
 		style: [
 			{
 				selector: 'node',
 				style: {
 					'background-color': '#666',
-					label: 'data(description)'
+					label: 'data(name)',
+					'text-valign': 'center',
+					'text-halign': 'center',
+					'font-size': '12px',
+					width: '60px',
+					height: '60px'
 				}
 			},
 			{
 				selector: 'edge',
 				style: {
-					width: 3,
+					width: 2,
 					'line-color': '#ccc',
 					'target-arrow-color': '#ccc',
 					'target-arrow-shape': 'triangle',
 					'curve-style': 'bezier',
-					label: 'data(description)'
+					label: 'data(description)',
+					'font-size': '10px',
+					'text-rotation': 'autorotate',
+					'text-margin-y': -10
 				}
 			}
 		],
+		minZoom: 0.1,
+		maxZoom: 3,
+
 		layout: {
-			name: 'grid',
-			rows: 1
-		}
+			name: 'cose',
+			animate: false,
+			nodeRepulsion: 8000,
+			idealEdgeLength: 100,
+			padding: 30
+		},
+		textureOnViewport: true,
+		motionBlur: false,
+		hideEdgesOnViewport: true,
+		hideLabelsOnViewport: true
 	};
+
+	async function fetchGraph(): Promise<GraphResponse> {
+		const response = await fetch('/api/graph');
+		if (!response.ok) {
+			throw new Error(`Failed to load graph (${response.status})`);
+		}
+
+		const json = await response.json();
+		return graphResponseSchema.parse(json);
+	}
 
 	onMount(() => {
 		let destroyed = false;
@@ -53,13 +117,25 @@
 				return;
 			}
 
-			cy = cytoscape({
-				...cytoscapeConfig,
-				container: graphContainer
-			});
+			try {
+				const graph = await fetchGraph();
 
-			cy.resize();
-			cy.fit();
+				if (destroyed) {
+					return;
+				}
+
+				cy = cytoscape({
+					...cytoscapeConfig,
+					container: graphContainer,
+					elements: mapEntitiesRelations(graph)
+				});
+
+				cy.resize();
+				cy.fit();
+			} catch (err) {
+				console.error(err);
+				loadError = err instanceof Error ? err.message : 'Failed to load graph';
+			}
 		};
 
 		void init();
@@ -79,6 +155,9 @@
 			<p>Visual relationships between indexed documents.</p>
 		</div>
 	</header>
+	{#if loadError}
+		<p class="graph-panel__error">{loadError}</p>
+	{/if}
 	<div class="graph-panel__canvas" bind:this={graphContainer}></div>
 </section>
 
@@ -124,5 +203,11 @@
 			flex-direction: column;
 			align-items: flex-start;
 		}
+	}
+
+	.graph-panel__error {
+		margin: 0;
+		padding: 0 1.5rem;
+		color: var(--color-error, #b42318);
 	}
 </style>
