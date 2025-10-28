@@ -8,13 +8,13 @@
 	const cytoscapeConfig: Omit<cytoscape.CytoscapeOptions, 'container'> = {
 		elements: [
 			{
-				data: { id: 'a' }
+				data: { id: 'a', description: 'Node A desc' }
 			},
 			{
-				data: { id: 'b' }
+				data: { id: 'b', description: 'Node B desc' }
 			},
 			{
-				data: { id: 'ab', source: 'a', target: 'b' }
+				data: { id: 'ab', source: 'a', target: 'b', description: 'Edge A <-> B desc' }
 			}
 		],
 		style: [
@@ -22,7 +22,7 @@
 				selector: 'node',
 				style: {
 					'background-color': '#666',
-					label: 'data(id)'
+					label: 'data(description)'
 				}
 			},
 			{
@@ -32,7 +32,8 @@
 					'line-color': '#ccc',
 					'target-arrow-color': '#ccc',
 					'target-arrow-shape': 'triangle',
-					'curve-style': 'bezier'
+					'curve-style': 'bezier',
+					label: 'data(description)'
 				}
 			}
 		],

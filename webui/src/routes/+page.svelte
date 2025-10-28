@@ -310,12 +310,14 @@
 	<StatusFooter label={statusMessage} tone={statusTone} />
 {/snippet}
 
-<AppShell
-	pageTitle="Document Management"
-	subTitle="Uploaded knowledge base documents"
-	{topnav}
-	{footer}
->
+<svelte:head>
+	<title>Enhanced KG</title>
+	<meta name="description" content="This is an Enhanced Knowledge Graph." />
+	<meta name="author" content="Satoshi" />
+	<link rel="canonical" href="https://www.example.com/sample" />
+</svelte:head>
+
+<AppShell {topnav} {footer}>
 	{#if activeTab() === 'Knowledge Graph'}
 		<KnowledgeGraph />
 	{:else if activeTab() === 'API'}
@@ -329,7 +331,7 @@
 		</section>
 	{:else}
 		<Toolbar
-			title="Document Management"
+			title="Scholarly Articles"
 			actions={toolbarActions}
 			rightActions={toolbarRightActions}
 			onSelect={handleToolbarSelect}
@@ -337,7 +339,7 @@
 
 		<input
 			type="file"
-			accept=".txt,.md,.json,.csv,.log,.conf,.ini"
+			accept=".txt,.md,.json,.csv"
 			class="hidden-file-input"
 			bind:this={fileInput}
 			onchange={handleFileChange}

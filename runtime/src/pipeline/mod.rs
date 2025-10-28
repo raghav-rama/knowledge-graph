@@ -4,6 +4,7 @@ pub mod error_reporter;
 pub mod extractor;
 pub mod pipeline;
 pub mod status_service;
+pub mod types;
 
 pub mod utils;
 

@@ -1,5 +1,10 @@
-use crate::storage::{JsonKvStorage, KvStorage};
-use anyhow::{Ok, Result, anyhow};
+use std::collections::HashMap;
+
+use crate::{
+    pipeline::types::{EntityNode, RelationEdge},
+    storage::{JsonKvStorage, KvStorage},
+};
+use anyhow::{Result, anyhow};
 use tiktoken_rs::{CoreBPE, o200k_base};
 
 pub trait Tokenizer: Send + Sync {
@@ -134,4 +139,28 @@ pub async fn get_entities_as_arr(entities: &JsonKvStorage) -> Result<Vec<String>
         };
     }
     Ok(entities)
+}
+
+pub async fn get_all_entities(s: &JsonKvStorage) -> Result<HashMap<String, EntityNode>> {
+    let mut entities = HashMap::new();
+
+    let raw_map = s.get_all().await?;
+    for (entity_id, value) in raw_map {
+        let entity: EntityNode = serde_json::from_value(value)?;
+        entities.insert(entity_id, entity);
+    }
+
+    Ok(entities)
+}
+
+pub async fn get_all_relationships(s: &JsonKvStorage) -> Result<HashMap<String, RelationEdge>> {
+    let mut relations = HashMap::new();
+
+    let raw_map = s.get_all().await?;
+    for (relation_id, value) in raw_map {
+        let relation_edge: RelationEdge = serde_json::from_value(value)?;
+        relations.insert(relation_id, relation_edge);
+    }
+
+    Ok(relations)
 }

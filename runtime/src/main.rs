@@ -156,6 +156,7 @@ async fn run() -> Result<()> {
         .route("/", get(handler))
         .route("/health", get(health))
         .merge(routes::document_routes())
+        .merge(routes::graph_routes())
         .with_state(state);
 
     let listener = TcpListener::bind(addr)

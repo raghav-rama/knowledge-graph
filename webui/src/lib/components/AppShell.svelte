@@ -2,8 +2,6 @@
 	import type { Snippet } from 'svelte';
 
 	const props = $props<{
-		pageTitle?: string;
-		subTitle?: string;
 		children: Snippet;
 		topnav?: Snippet;
 		footer?: Snippet;

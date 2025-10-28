@@ -11,9 +11,11 @@ use petgraph::{
     stable_graph::{NodeIndex, StableDiGraph},
 };
 use runtime::storage::{JsonKvStorage, JsonKvStorageConfig, KvStorage};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Default, Clone, Debug, Deserialize)]
+#[derive(Default, Clone, Debug, Deserialize, TS, Serialize)]
+#[ts(export)]
 struct EntityNode {
     chunk_id: String,
     chunk_order_index: u32,
