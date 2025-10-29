@@ -155,6 +155,7 @@ async fn run() -> Result<()> {
     let app = Router::new()
         .route("/", get(handler))
         .route("/health", get(health))
+        .merge(routes::x402_route())
         .merge(routes::document_routes())
         .merge(routes::graph_routes())
         .with_state(state);

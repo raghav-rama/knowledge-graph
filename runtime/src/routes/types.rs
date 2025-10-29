@@ -25,3 +25,9 @@ pub struct GraphResponse {
     pub entities: Vec<EntityResponse>,
     pub relations: Vec<RelationshipEdgeResponse>,
 }
+
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct GraphSearchResponse {
+    pub message: String,
+}
