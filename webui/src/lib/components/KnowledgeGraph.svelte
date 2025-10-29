@@ -25,9 +25,9 @@
 		relations: z.array(relationshipSchema)
 	}) satisfies z.ZodType<GraphResponse>;
 
-	let graphContainer: HTMLDivElement | null = null;
-	let cy: cytoscape.Core | null = null;
-	let loadError: string | null = null;
+	let graphContainer: HTMLDivElement | null = $state(null);
+	let cy: cytoscape.Core | null = $state(null);
+	let loadError: string | null = $state(null);
 
 	function mapEntitiesRelations(obj: GraphResponse) {
 		const entities = obj.entities.map((e) => {
