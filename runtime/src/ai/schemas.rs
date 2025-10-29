@@ -1,167 +1,61 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-pub const ENTITY_TYPE_VARIANTS: [&str; 37] = [
-    "Researcher",
-    "Clinician",
-    "Patient / Participant",
-    "Institution / Organization",
-    "Funding Agency",
+pub const ENTITY_TYPE_VARIANTS: [&str; 11] = [
     "Gene",
-    "Protein",
-    "RNA",
-    "Cell",
-    "Tissue",
-    "Organ",
-    "Organism / Species",
-    "Disease / Disorder",
-    "Syndrome",
-    "Symptom / Phenotype",
+    "Disease",
     "Pathway",
-    "Drug / Compound / Chemical Substance",
-    "Biomarker",
-    "Reagent",
-    "Material",
-    "Method / Technique / Assay / Protocol",
-    "Equipment / Instrument",
-    "Sample / Specimen",
-    "Control / Variable",
-    "Measurement / Metric",
-    "Dataset",
-    "Model (computational, statistical, or biological)",
-    "Hypothesis / Objective",
-    "Result / Observation / Finding",
-    "Theory / Concept",
-    "Parameter",
-    "Clinical Trial",
-    "Project / Study",
-    "Ethical Approval / Consent",
-    "Time / Duration / Temporal Stage",
-    "Location",
-    "Publication / Reference",
+    "CellularComponent",
+    "Compound",
+    "Drug",
+    "Anatomy",
+    "Symptom",
+    "BiologicalProcess",
+    "MolecularFunction",
+    "SideEffect",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "PascalCase")]
 pub enum EntityType {
-    #[serde(rename = "Researcher")]
-    Researcher,
-    #[serde(rename = "Clinician")]
-    Clinician,
-    #[serde(rename = "Patient / Participant")]
-    PatientParticipant,
-    #[serde(rename = "Institution / Organization")]
-    InstitutionOrganization,
-    #[serde(rename = "Funding Agency")]
-    FundingAgency,
     #[serde(rename = "Gene")]
     Gene,
-    #[serde(rename = "Protein")]
-    Protein,
-    #[serde(rename = "RNA")]
-    Rna,
-    #[serde(rename = "Cell")]
-    Cell,
-    #[serde(rename = "Tissue")]
-    Tissue,
-    #[serde(rename = "Organ")]
-    Organ,
-    #[serde(rename = "Organism / Species")]
-    OrganismSpecies,
-    #[serde(rename = "Disease / Disorder")]
-    DiseaseDisorder,
-    #[serde(rename = "Syndrome")]
-    Syndrome,
-    #[serde(rename = "Symptom / Phenotype")]
-    SymptomPhenotype,
+    #[serde(rename = "Disease")]
+    Disease,
     #[serde(rename = "Pathway")]
-    PathwayMetabolicOrSignaling,
-    #[serde(rename = "Drug / Compound / Chemical Substance")]
-    DrugCompoundChemicalSubstance,
-    #[serde(rename = "Biomarker")]
-    Biomarker,
-    #[serde(rename = "Reagent")]
-    Reagent,
-    #[serde(rename = "Material")]
-    MaterialScaffoldOrNanoparticle,
-    #[serde(rename = "Method / Technique / Assay / Protocol")]
-    MethodTechniqueAssayProtocol,
-    #[serde(rename = "Equipment / Instrument")]
-    EquipmentInstrument,
-    #[serde(rename = "Sample / Specimen")]
-    SampleSpecimen,
-    #[serde(rename = "Control / Variable")]
-    ControlVariable,
-    #[serde(rename = "Measurement / Metric")]
-    MeasurementMetric,
-    #[serde(rename = "Dataset")]
-    Dataset,
-    #[serde(rename = "Model (computational, statistical, or biological)")]
-    ModelComputationalStatisticalOrBiological,
-    #[serde(rename = "Hypothesis / Objective")]
-    HypothesisObjective,
-    #[serde(rename = "Result / Observation / Finding")]
-    ResultObservationFinding,
-    #[serde(rename = "Theory / Concept")]
-    TheoryConcept,
-    #[serde(rename = "Parameter")]
-    Parameter,
-    #[serde(rename = "Clinical Trial")]
-    ClinicalTrial,
-    #[serde(rename = "Project / Study")]
-    ProjectStudy,
-    #[serde(rename = "Ethical Approval / Consent")]
-    EthicalApprovalConsent,
-    #[serde(rename = "Time / Duration / Temporal Stage")]
-    TimeDurationTemporalStage,
-    #[serde(rename = "Location")]
-    LocationResearchSiteHospitalRegion,
-    #[serde(rename = "Publication / Reference")]
-    PublicationReference,
+    Pathway,
+    #[serde(rename = "PharmacologicClass")]
+    PharmacologicClass,
+    #[serde(rename = "CellularComponent")]
+    CellularComponent,
+    #[serde(rename = "Compound")]
+    Compound,
+    #[serde(rename = "Anatomy")]
+    Anatomy,
+    #[serde(rename = "Symptom")]
+    Symptom,
+    #[serde(rename = "BiologicalProcess")]
+    BiologicalProcess,
+    #[serde(rename = "MolecularFunction")]
+    MolecularFunction,
+    #[serde(rename = "SideEffect")]
+    SideEffect,
 }
 
 impl EntityType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Researcher => "Researcher",
-            Self::Clinician => "Clinician",
-            Self::PatientParticipant => "Patient / Participant",
-            Self::InstitutionOrganization => "Institution / Organization",
-            Self::FundingAgency => "Funding Agency",
             Self::Gene => "Gene",
-            Self::Protein => "Protein",
-            Self::Rna => "RNA",
-            Self::Cell => "Cell",
-            Self::Tissue => "Tissue",
-            Self::Organ => "Organ",
-            Self::OrganismSpecies => "Organism / Species",
-            Self::DiseaseDisorder => "Disease / Disorder",
-            Self::Syndrome => "Syndrome",
-            Self::SymptomPhenotype => "Symptom / Phenotype",
-            Self::PathwayMetabolicOrSignaling => "Pathway",
-            Self::DrugCompoundChemicalSubstance => "Drug / Compound / Chemical Substance",
-            Self::Biomarker => "Biomarker",
-            Self::Reagent => "Reagent",
-            Self::MaterialScaffoldOrNanoparticle => "Material",
-            Self::MethodTechniqueAssayProtocol => "Method / Technique / Assay / Protocol",
-            Self::EquipmentInstrument => "Equipment / Instrument",
-            Self::SampleSpecimen => "Sample / Specimen",
-            Self::ControlVariable => "Control / Variable",
-            Self::MeasurementMetric => "Measurement / Metric",
-            Self::Dataset => "Dataset",
-            Self::ModelComputationalStatisticalOrBiological => {
-                "Model (computational, statistical, or biological)"
-            }
-            Self::HypothesisObjective => "Hypothesis / Objective",
-            Self::ResultObservationFinding => "Result / Observation / Finding",
-            Self::TheoryConcept => "Theory / Concept",
-            Self::Parameter => "Parameter",
-            Self::ClinicalTrial => "Clinical Trial",
-            Self::ProjectStudy => "Project / Study",
-            Self::EthicalApprovalConsent => "Ethical Approval / Consent",
-            Self::TimeDurationTemporalStage => "Time / Duration / Temporal Stage",
-            Self::LocationResearchSiteHospitalRegion => "Location",
-            Self::PublicationReference => "Publication / Reference",
+            Self::Disease => "Disease",
+            Self::Pathway => "Pathway",
+            Self::PharmacologicClass => "PharmacologicClass",
+            Self::CellularComponent => "CellularComponent",
+            Self::Compound => "Compound",
+            Self::Anatomy => "Anatomy",
+            Self::Symptom => "Symptom",
+            Self::BiologicalProcess => "BiologicalProcess",
+            Self::MolecularFunction => "MolecularFunction",
+            Self::SideEffect => "SideEffect",
         }
     }
 }
