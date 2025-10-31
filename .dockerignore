@@ -1,0 +1,16 @@
+target
+runtime/target
+webui/node_modules
+node_modules
+webui/build
+.pnpm-store
+.git
+.gitignore
+logs
+data
+*.log
+*.local
+venv
+.env
+.env.*
+# keep Dockerfile in context so builds work even if renamed
