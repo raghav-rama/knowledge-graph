@@ -1,19 +1,24 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-pub const ENTITY_TYPE_VARIANTS: [&str; 11] = [
+pub const BASE_ENTITY_TYPES: [&str; 14] = [
     "Gene",
-    "Disease",
-    "Pathway",
-    "CellularComponent",
+    "Protein",
     "Compound",
-    "Drug",
-    "Anatomy",
-    "Symptom",
     "BiologicalProcess",
     "MolecularFunction",
-    "SideEffect",
+    "CellularComponent",
+    "Pathway",
+    "Disease",
+    "Symptom",
+    "Intervention",
+    "Mechanism",
+    "CellType",
+    "Tissue",
+    "Organism",
 ];
+
+pub const LONGEVITY_EXTENSION: [&str; 3] = ["AgingHallmark", "Biomarker", "LifespanModel"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "PascalCase")]
@@ -121,7 +126,7 @@ pub fn entities_relationships_schema() -> serde_json::Value {
                         },
                         "entity_type": {
                             "type": "string",
-                            "enum": ENTITY_TYPE_VARIANTS.iter().copied().collect::<Vec<_>>(),
+                            "enum": BASE_ENTITY_TYPES.iter().copied().collect::<Vec<_>>(),
                             "description": "Categorize the entity using one of the following controlled vocabulary. If none of the provided entity types apply, do not add new entity type and classify it as `Other`"
                         },
                         "entity_description": {
