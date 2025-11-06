@@ -23,6 +23,8 @@ brew install cargo-watch
 
 # Install just (task runner)
 brew install just
+
+brew install protobuf
 ```
 
 Install UI dependencies
