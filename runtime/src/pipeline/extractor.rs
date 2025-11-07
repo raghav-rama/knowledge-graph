@@ -89,6 +89,7 @@ impl EntityRelationshipExtractor for EntityRelationshipExtract {
                 "gpt-5-mini",
                 "You are helpful assistant",
                 &chunk.content,
+                Some(&chunk.id),
                 "entities_relarionships",
                 schema,
                 true,

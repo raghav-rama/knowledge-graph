@@ -180,6 +180,16 @@ impl Pipeline {
         for (doc_id, status) in pending.drain() {
             if let Err(err) = self.process_document(&doc_id, &status).await {
                 error!(error = %err, doc_id = %doc_id, "failed to process document");
+
+                for (depth, cause) in err.chain().skip(1).enumerate() {
+                    error!(
+                        doc_id = %doc_id,
+                        cause_depth = depth + 1,
+                        cause = %cause,
+                        "caused by"
+                    );
+                }
+
                 if let Err(status_err) = self
                     .status_service
                     .mark_failed(&doc_id, &status, &err)
@@ -220,7 +230,7 @@ impl Pipeline {
                 let extractor = Arc::clone(&self.entity_relationship_extractor);
                 async move { extractor.extract_entities_and_relationships(&chunk).await }
             })
-            .buffer_unordered(10)
+            .buffer_unordered(50)
             .try_collect::<Vec<_>>()
             .await?;
 

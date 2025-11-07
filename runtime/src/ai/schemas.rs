@@ -25,42 +25,51 @@ pub const LONGEVITY_EXTENSION: [&str; 3] = ["AgingHallmark", "Biomarker", "Lifes
 pub enum EntityType {
     #[serde(rename = "Gene")]
     Gene,
-    #[serde(rename = "Disease")]
-    Disease,
-    #[serde(rename = "Pathway")]
-    Pathway,
-    #[serde(rename = "PharmacologicClass")]
-    PharmacologicClass,
-    #[serde(rename = "CellularComponent")]
-    CellularComponent,
+    #[serde(rename = "Protein")]
+    Protein,
     #[serde(rename = "Compound")]
     Compound,
-    #[serde(rename = "Anatomy")]
-    Anatomy,
-    #[serde(rename = "Symptom")]
-    Symptom,
     #[serde(rename = "BiologicalProcess")]
     BiologicalProcess,
     #[serde(rename = "MolecularFunction")]
     MolecularFunction,
-    #[serde(rename = "SideEffect")]
-    SideEffect,
+    #[serde(rename = "CellularComponent")]
+    CellularComponent,
+    #[serde(rename = "Pathway")]
+    Pathway,
+    #[serde(rename = "Disease")]
+    Disease,
+    #[serde(rename = "Symptom")]
+    Symptom,
+    #[serde(rename = "Intervention")]
+    Intervention,
+    #[serde(rename = "Mechanism")]
+    Mechanism,
+    #[serde(rename = "CellType")]
+    CellType,
+    #[serde(rename = "Tissue")]
+    Tissue,
+    #[serde(rename = "Organism")]
+    Organism,
 }
 
 impl EntityType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Gene => "Gene",
-            Self::Disease => "Disease",
-            Self::Pathway => "Pathway",
-            Self::PharmacologicClass => "PharmacologicClass",
-            Self::CellularComponent => "CellularComponent",
+            Self::Protein => "Protein",
             Self::Compound => "Compound",
-            Self::Anatomy => "Anatomy",
-            Self::Symptom => "Symptom",
             Self::BiologicalProcess => "BiologicalProcess",
             Self::MolecularFunction => "MolecularFunction",
-            Self::SideEffect => "SideEffect",
+            Self::CellularComponent => "CellularComponent",
+            Self::Pathway => "Pathway",
+            Self::Disease => "Disease",
+            Self::Symptom => "Symptom",
+            Self::Intervention => "Intervention",
+            Self::Mechanism => "Mechanism",
+            Self::CellType => "CellType",
+            Self::Tissue => "Tissue",
+            Self::Organism => "Organism",
         }
     }
 }
@@ -86,7 +95,7 @@ pub struct EntitiesRelationships {
     pub relationships: Vec<ExtractedRelationship>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct CalendarEvent {
     pub name: String,
     pub date: String,

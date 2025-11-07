@@ -135,6 +135,7 @@ impl ReActAgent {
                 &self.config.model,
                 &self.config.system_prompt,
                 &prompt,
+                None,
                 "react_agent",
                 schema,
                 true,
@@ -238,7 +239,7 @@ pub struct AgentOutcome {
     pub steps: Vec<AgentStep>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 struct AgentDecision {
     #[serde(rename = "type")]
     decision_type: DecisionKind,
@@ -251,9 +252,10 @@ struct AgentDecision {
     final_answer: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 enum DecisionKind {
+    #[default]
     Act,
     Finish,
 }

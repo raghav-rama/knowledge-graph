@@ -43,6 +43,7 @@ impl Tool for CalendarExtractionTool {
                 &self.model,
                 &self.system_prompt,
                 input,
+                None,
                 "calendar_event",
                 schema,
                 true,

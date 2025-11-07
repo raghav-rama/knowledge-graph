@@ -2,7 +2,8 @@ use anyhow::Context;
 use reqwest::{Client, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, sleep, timeout};
+use tracing::{debug, info, warn};
 
 pub struct ResponsesClient {
     http: Client,
@@ -91,55 +92,68 @@ impl ResponsesClient {
     }
 
     async fn poll_oai_response(&self, raw_response: Value, path: &str) -> anyhow::Result<Value> {
-        if let Some(id) = raw_response.get("id").and_then(|v| v.as_str()) {
+        let id = raw_response
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("missing response id"))?;
+        let overall_timeout = Duration::from_secs(300000);
+        let req_timeout = Duration::from_secs(150000);
+        let mut delay = Duration::from_secs(2);
+
+        timeout(overall_timeout, async {
             loop {
-                match self
-                    .http
-                    .get(format!("{}/v1{}/{id}", self.base, path))
-                    .bearer_auth(&self.api_key)
-                    .send()
-                    .await
+                let url = format!("{}/v1{}/{id}", self.base, path);
+                match timeout(
+                    req_timeout,
+                    self.http.get(url).bearer_auth(&self.api_key).send(),
+                )
+                .await
                 {
-                    Ok(res) => {
-                        if res.status().is_success() {
-                            let v: Value = res.json().await.with_context(|| {
-                                format!("Error getting OpenAI respose with id: {id}")
-                            })?;
-                            if let Some(status) = v.get("status").and_then(|v| v.as_str()) {
-                                match status {
-                                    "completed" => return Ok(v),
-                                    "failed" | "cancelled" => {
-                                        let detail = v
-                                            .get("error")
-                                            .and_then(|e| e.get("message").and_then(|m| m.as_str()))
-                                            .or_else(|| {
-                                                v.get("last_error").and_then(|e| {
-                                                    e.get("message").and_then(|m| m.as_str())
-                                                })
-                                            });
-                                        if let Some(detail) = detail {
-                                            anyhow::bail!(
-                                                "OpenAI background response {} | {}",
-                                                status,
-                                                detail
-                                            );
-                                        }
-                                        anyhow::bail!("OpenAI background response {}", status);
-                                    }
-                                    _ => {}
-                                }
+                    Ok(Ok(res)) if res.status().is_success() => {
+                        let payload: Value = res
+                            .json()
+                            .await
+                            .with_context(|| format!("error parsing OpenAI response {id}"))?;
+                        match payload.get("status").and_then(Value::as_str) {
+                            Some("completed") => return Ok(payload),
+                            Some(status @ ("failed" | "cancelled")) => {
+                                let detail = payload
+                                    .pointer("/error/message")
+                                    .or_else(|| payload.pointer("/last_error/message"))
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("no detail provided");
+                                anyhow::bail!("OpenAI background responses | status={status} | detail={detail}, response_id={id}");
                             }
-                        } else {
-                            let err_txt = res.text().await?;
-                            anyhow::bail!("{}", err_txt)
+                            _ => debug!(response_id = id, "background job still running"),
                         }
                     }
-                    Err(err) => anyhow::bail!("Network error | {err}"),
+                    Ok(Ok(res)) => {
+                        let status = res.status();
+                        let body = res.text().await.unwrap_or_default();
+                        if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+                            warn!(response_id=id, %status, "transient poll failure; retrying");
+                        } else {
+                            anyhow::bail!("OpenAI poll returned {}: {}", status, body);
+                        }
+                    }
+                    Ok(Err(err)) => {
+                        warn!(
+                            response_id = id,
+                            error = %err,
+                            "network error polling; retrying"
+                        );
+                    }
+                    Err(_) => {
+                        warn!(response_id = id, "per-request timeout; retrying");
+                    }
                 }
-                sleep(Duration::from_secs(2)).await;
+
+                sleep(delay + Duration::from_millis(fastrand::u64(0..500))).await;
+                delay = (delay * 2).min(Duration::from_secs(20));
             }
-        }
-        anyhow::bail!("Error polling OpenAI background responses")
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("polling OpenAI response {id} timed out"))?
     }
 
     async fn post_json(&self, path: &str, body: &Value) -> reqwest::Result<reqwest::Response> {
@@ -151,11 +165,12 @@ impl ResponsesClient {
             .await
     }
 
-    pub async fn responses_structured<T: DeserializeOwned>(
+    pub async fn responses_structured<T: DeserializeOwned + Default>(
         &self,
         model: &str,
         system: &str,
         user: &str,
+        chunk_id: Option<&str>,
         schema_name: &str,
         schema: Value,
         strict: bool,
@@ -192,9 +207,17 @@ impl ResponsesClient {
                     .await
                     .with_context(|| "Error polling OpenAI responses api")?;
                 if let Some(parsed) = Self::extract_structured_output(&v) {
+                    if let Some(id) = chunk_id {
+                        info!(chunk_id = %id, "Extracted entity relations for");
+                    }
                     return Ok(parsed);
                 }
-                anyhow::bail!("Structured output not found in response");
+                let id = v
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| anyhow::anyhow!("missing response id"))?;
+                warn!(response_id=%id, "Structured output not found in response");
+                return Ok(T::default());
             }
 
             if matches!(resp.status(), StatusCode::TOO_MANY_REQUESTS)
