@@ -57,9 +57,43 @@ struct JobResult {
 }
 
 struct Queue {
-    jobs: VecDeque<String>,
+    jobs: VecDeque<String>,         // stores job ids
     jobs_map: HashMap<String, Job>, // for O(1) look up =)
     capacity: u32,
+}
+
+impl Queue {
+    pub fn new(capacity: u32) -> Self {
+        Queue {
+            jobs: VecDeque::new(),
+            jobs_map: HashMap::new(),
+            capacity,
+        }
+    }
+
+    pub fn enqueue(&mut self, job_id: String, job: Job) -> String {
+        self.jobs.push_back(job_id.clone());
+        self.jobs_map.insert(job_id.clone(), job);
+        job_id
+    }
+
+    pub fn dequeue(&mut self) -> Option<Job> {
+        let maybe_job_id = self.jobs.pop_front();
+        if let Some(job_id) = maybe_job_id {
+            self.jobs_map.remove(&job_id)
+        } else {
+            None
+        }
+    }
+
+    pub fn peek(&self) -> Option<&Job> {
+        let maybe_job_id = self.jobs.front();
+        if let Some(job_id) = maybe_job_id {
+            self.jobs_map.get(job_id)
+        } else {
+            None
+        }
+    }
 }
 
 enum JobStatus {
