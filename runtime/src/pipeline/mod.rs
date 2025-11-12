@@ -3,6 +3,7 @@ pub mod document_manager;
 pub mod error_reporter;
 pub mod extractor;
 pub mod pipeline;
+pub mod scheduler;
 pub mod status_service;
 pub mod types;
 
