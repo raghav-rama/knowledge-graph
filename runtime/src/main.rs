@@ -7,7 +7,12 @@ use axum::{Router, extract::State, http::StatusCode, routing::get};
 use dotenvy::dotenv;
 use serde::Deserialize;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::{fs, net::TcpListener, signal};
+use tokio::{
+    fs,
+    net::TcpListener,
+    signal,
+    sync::mpsc::{self as mpsc, Receiver, Sender},
+};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -16,7 +21,10 @@ mod pipeline;
 mod routes;
 mod storage;
 use ai::responses::ResponsesClient;
-use pipeline::{AppStorages, DocumentManager, Pipeline};
+use pipeline::{
+    AppStorages, DocumentManager, Pipeline,
+    scheduler::{JobDispatch, JobResult},
+};
 use storage::{
     DocStatusStorage, KvStorage, StorageManager, StoragesStatus,
     json_doc_status::{JsonDocStatusConfig, JsonDocStatusStorage},
@@ -60,6 +68,8 @@ async fn run() -> Result<()> {
     dotenv().with_context(|| "Problem loading .env file")?;
     let api_key = env::var("OPENAI_API_KEY").context("openai aapi key not set")?;
 
+    let (work_tx, mut work_rx) = mpsc::channel::<JobDispatch>(100);
+    let (job_result_tx, mut job_result_rx) = mpsc::channel::<JobResult>(100);
     let config = load_config()
         .await
         .context("Failed to load application configuration")?;

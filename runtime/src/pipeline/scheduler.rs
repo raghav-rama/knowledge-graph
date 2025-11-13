@@ -24,6 +24,20 @@ struct Scheduler {
 }
 
 impl Scheduler {
+    pub fn new(
+        max_inflight: u8,
+        capacity: u32,
+        work_tx: Sender<JobDispatch>,
+        result_rx: Receiver<JobResult>,
+    ) -> Self {
+        let queue = Arc::new(Mutex::new(Queue::new(capacity)));
+        Scheduler {
+            queue,
+            dispatcher: Dispatcher::new(work_tx, max_inflight),
+            workers: Worker::new(),
+            result_rx,
+        }
+    }
     pub async fn run(self) {
         loop {
             let maybe_job = self.queue.as_ref();
@@ -37,6 +51,16 @@ struct Dispatcher {
     inflight: HashSet<String>,
 }
 
+impl Dispatcher {
+    pub fn new(work_tx: Sender<JobDispatch>, max_inflight: u8) -> Self {
+        Dispatcher {
+            work_tx,
+            max_inflight,
+            inflight: HashSet::new(),
+        }
+    }
+}
+
 struct WorkerHandles {
     work_rx: Receiver<JobDispatch>,
     result_tx: Sender<JobResult>,
@@ -46,12 +70,20 @@ struct Worker {
     handler: Vec<WorkerHandles>,
 }
 
-struct JobDispatch {
+impl Worker {
+    pub fn new() -> Self {
+        Worker {
+            handler: Vec::new(),
+        }
+    }
+}
+
+pub struct JobDispatch {
     job_id: String,
     chunk: Chunk,
 }
 
-struct JobResult {
+pub struct JobResult {
     entity_relationships: EntitiesRelationships,
     chunk_id: String,
     job_id: String,
