@@ -1,5 +1,6 @@
 use super::{chunker::Chunk, utils::compute_mdhash_id};
 use crate::ai::schemas::EntitiesRelationships;
+use anyhow::{Ok, Result, anyhow};
 use chrono::{DateTime, Utc};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -71,10 +72,19 @@ impl Queue {
         }
     }
 
-    pub fn enqueue(&mut self, job_id: String, job: Job) -> String {
+    pub fn enqueue(&mut self, job_id: String, job: Job) -> Result<String> {
+        if self.jobs.contains(&job_id) {
+            let already_maybe_job = self.jobs_map.get(&job_id);
+            if already_maybe_job.is_none() {
+                return Err(anyhow!("Job already exists"));
+            }
+        }
+        if self.jobs.len() >= self.capacity as usize {
+            return Err(anyhow!("Capacity reached"));
+        }
         self.jobs.push_back(job_id.clone());
         self.jobs_map.insert(job_id.clone(), job);
-        job_id
+        Ok(job_id)
     }
 
     pub fn dequeue(&mut self) -> Option<Job> {
@@ -84,6 +94,14 @@ impl Queue {
         } else {
             None
         }
+    }
+
+    pub fn requeue(&mut self, mut job: Job) -> Result<String> {
+        job.next_run_at = Instant::now(); // update next_run_at
+        if job.current_retry > job.max_retries {
+            return Err(anyhow!("Max retries reachd"));
+        }
+        self.enqueue(job.job_id.to_owned(), job)
     }
 
     pub fn peek(&self) -> Option<&Job> {
