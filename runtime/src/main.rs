@@ -23,7 +23,7 @@ mod storage;
 use ai::responses::ResponsesClient;
 use pipeline::{
     AppStorages, DocumentManager, Pipeline,
-    scheduler::{JobDispatch, JobResult},
+    scheduler::{JobDispatch, JobResult, Scheduler},
 };
 use storage::{
     DocStatusStorage, KvStorage, StorageManager, StoragesStatus,
@@ -47,6 +47,7 @@ pub(crate) struct AppState {
     pipeline: Arc<Pipeline>,
     storages_status: StoragesStatus,
     ai_client: Arc<ResponsesClient>,
+    scheduler: Arc<Scheduler>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,8 +69,15 @@ async fn run() -> Result<()> {
     dotenv().with_context(|| "Problem loading .env file")?;
     let api_key = env::var("OPENAI_API_KEY").context("openai aapi key not set")?;
 
-    let (work_tx, mut work_rx) = mpsc::channel::<JobDispatch>(100);
-    let (job_result_tx, mut job_result_rx) = mpsc::channel::<JobResult>(100);
+    let (work_tx, work_rx) = mpsc::channel::<JobDispatch>(100);
+    let (job_result_tx, job_result_rx) = mpsc::channel::<JobResult>(100);
+    // scheduler
+    let scheduler = Arc::new(Scheduler::new(10, 5, work_tx, job_result_rx));
+    let _scheduler = scheduler.clone();
+    tokio::spawn(async move {
+        _scheduler.run().await;
+    });
+
     let config = load_config()
         .await
         .context("Failed to load application configuration")?;
@@ -154,6 +162,7 @@ async fn run() -> Result<()> {
         pipeline,
         storages_status: storage_manager.status(),
         ai_client,
+        scheduler,
     });
 
     let addr_string = format!("{}:{}", config.server.host, config.server.port);

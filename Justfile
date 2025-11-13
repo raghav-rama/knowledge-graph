@@ -4,7 +4,7 @@ set shell := ["bash", "-u", "-o", "pipefail", "-c"]
 default: dev
 
 # Common commands used by multiple recipes
-_dev_backend_command := "cd runtime && RUST_BACKTRACE=1 cargo watch -x 'run'"
+_dev_backend_command := "cd runtime && RUST_BACKTRACE=1 RUST_LOG=runtime=debug cargo watch -x 'run'"
 _dev_frontend_command := "cd webui && pnpm run dev"
 
 # Backend dev server with hot reload

@@ -8,9 +8,9 @@ use axum::{
 };
 use serde::Serialize;
 use tokio::fs;
-use tracing::{info, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::AppState;
+use crate::{AppState, pipeline::scheduler::Job};
 
 #[derive(Serialize)]
 struct InsertResponse {
@@ -149,6 +149,15 @@ async fn upload_to_input_dir(
             ),
         ));
     }
+    let scheduler = state.scheduler.clone();
+    let mut guard = scheduler.queue.lock().await;
+
+    let job = Job::new(random_string(7));
+    let result = guard.enqueue(job.job_id.clone(), job);
+    match result {
+        Ok(job_id) => debug!("Enqueued {}", job_id),
+        Err(err) => error!(error=%err, "Error"),
+    }
 
     let existing_doc = state
         .storages
@@ -208,6 +217,7 @@ async fn upload_to_input_dir(
         })?;
 
     let background_pipeline = pipeline.clone();
+
     tokio::spawn(async move {
         if let Err(err) = background_pipeline.process_queue().await {
             warn!(error = %err, "background pipeline processing failed");
@@ -235,4 +245,18 @@ fn map_status(status: &crate::storage::DocStatus) -> String {
         DocStatus::FAILED => "Failed".to_string(),
         DocStatus::ALL => "All".to_string(),
     }
+}
+
+use rand::{Rng, rng, seq::SliceRandom};
+
+fn random_string(len: usize) -> String {
+    let ss = b"ABCDEF1234567890";
+    let mut rng = rng();
+    let len = ss.len();
+    (0..len)
+        .map(|_| {
+            let idx = rng.random_range(0..len);
+            ss[idx] as char
+        })
+        .collect()
 }

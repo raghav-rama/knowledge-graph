@@ -5,19 +5,21 @@ use chrono::{DateTime, Utc};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
+    time::Duration,
 };
 use tokio::{
     sync::{
         Mutex,
         mpsc::{Receiver, Sender},
     },
-    time::Instant,
+    time::{Instant, sleep},
 };
+use tracing::debug;
 
 use crate::AppState;
 
-struct Scheduler {
-    queue: Arc<Mutex<Queue>>,
+pub struct Scheduler {
+    pub queue: Arc<Mutex<Queue>>,
     dispatcher: Dispatcher,
     workers: Worker,
     result_rx: Receiver<JobResult>,
@@ -38,9 +40,18 @@ impl Scheduler {
             result_rx,
         }
     }
-    pub async fn run(self) {
+    pub async fn run(&self) {
         loop {
-            let maybe_job = self.queue.as_ref();
+            let now = Instant::now();
+            let guard = self.queue.lock().await;
+            if let Some(job) = guard.peek() {
+                debug!("executing job {}", job.job_id);
+            } else {
+                debug!("no job found")
+            }
+            drop(guard);
+
+            sleep(Duration::new(10, 0)).await;
         }
     }
 }
@@ -89,7 +100,7 @@ pub struct JobResult {
     job_id: String,
 }
 
-struct Queue {
+pub struct Queue {
     jobs: VecDeque<String>,         // stores job ids
     jobs_map: HashMap<String, Job>, // for O(1) look up =)
     capacity: u32,
@@ -105,6 +116,7 @@ impl Queue {
     }
 
     pub fn enqueue(&mut self, job_id: String, job: Job) -> Result<String> {
+        debug!("Enqueing {}", job_id);
         if self.jobs.contains(&job_id) {
             let already_maybe_job = self.jobs_map.get(&job_id);
             if already_maybe_job.is_none() {
@@ -139,7 +151,16 @@ impl Queue {
     pub fn peek(&self) -> Option<&Job> {
         let maybe_job_id = self.jobs.front();
         if let Some(job_id) = maybe_job_id {
-            self.jobs_map.get(job_id)
+            let maybe_job = self.jobs_map.get(job_id);
+            if let Some(job) = maybe_job {
+                if job.next_run_at <= Instant::now() {
+                    Some(job)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -154,8 +175,8 @@ enum JobStatus {
     PartiallyFailed,
 }
 
-struct Job {
-    job_id: String,
+pub struct Job {
+    pub job_id: String,
     doc_id: String,
     max_retries: u8,
     current_retry: u8,
