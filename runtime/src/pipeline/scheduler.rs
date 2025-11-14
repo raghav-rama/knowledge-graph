@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    result,
     sync::Arc,
     time::Duration,
 };
@@ -19,7 +20,7 @@ use tokio::{
     },
     time::{Instant, sleep},
 };
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::AppState;
 
@@ -27,7 +28,7 @@ pub struct Scheduler {
     pub queue: Arc<Mutex<Queue>>,
     dispatcher: Dispatcher,
     // workers: Worker,
-    result_rx: Receiver<JobResult>,
+    result_rx: Arc<Mutex<Receiver<JobResult>>>,
     pipeline: Arc<Pipeline>,
     storage: Arc<AppStorages>,
 }
@@ -37,14 +38,16 @@ impl Scheduler {
         max_inflight: u8,
         capacity: u32,
         work_tx: Sender<JobDispatch>,
-        result_rx: Receiver<JobResult>,
+        result_rx: Arc<Mutex<Receiver<JobResult>>>,
         pipeline: Arc<Pipeline>,
         storage: Arc<AppStorages>,
         work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
         result_tx: Sender<JobResult>,
     ) -> Self {
         let queue = Arc::new(Mutex::new(Queue::new(capacity)));
-        Worker::spawn_pool(work_rx, result_tx, 10);
+
+        Worker::spawn_pool(work_rx, result_tx, 10); // spawn 10 concurrent ER extraction workers
+
         let scheduler = Scheduler {
             queue,
             dispatcher: Dispatcher::new(work_tx, max_inflight),
@@ -55,38 +58,81 @@ impl Scheduler {
         // tokio::spawn(async move { worker.handle().await });
         scheduler
     }
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: Arc<Self>) -> Result<()> {
         loop {
-            let now = Instant::now();
-            let job = {
-                let mut guard = self.queue.lock().await;
-                guard.peek().cloned()
-            };
-            if let Some(job) = job {
-                debug!("executing job {}", job.job_id);
-                {
-                    let mut guard = self.queue.lock().await;
-                    guard.mark_processing(&job.job_id);
-                }
-                let chunks = self.make_chunks(&job).await?;
-                debug!("Made {} chunk(s)", chunks.len());
-                for chunk in chunks.iter().cloned() {
-                    self.dispatcher
-                        .work_tx
-                        .send(JobDispatch {
-                            job_id: job.job_id.clone(),
-                            chunk,
-                        })
-                        .await?;
-                }
+            let result_rx = self.result_rx.clone();
+            let mut guard = result_rx.lock().await;
+            tokio::select! {
+                _ = self.schedule_tick() => {},
+                maybe_result = guard.recv() => {
+                    if let Some(job_result) = maybe_result {
+                        debug!("Chunk processed {}", job_result.chunk_id);
+                    }
 
-                // if let Err(_) = self.dispatcher.work_tx.send(job).await {}
-            } else {
-                debug!("no job found")
+                }
+            };
+            // let now = Instant::now();
+            // let job = {
+            //     let mut guard = self.queue.lock().await;
+            //     guard.peek().cloned()
+            // };
+            // if let Some(job) = job {
+            //     debug!("executing job {}", job.job_id);
+            //     {
+            //         let mut guard = self.queue.lock().await;
+            //         guard.mark_processing(&job.job_id)?;
+            //     }
+            //     let chunks = self.make_chunks(&job).await?;
+            //     debug!("Made {} chunk(s)", chunks.len());
+            //     for chunk in chunks.iter().cloned() {
+            //         self.dispatcher
+            //             .work_tx
+            //             .send(JobDispatch {
+            //                 job_id: job.job_id.clone(),
+            //                 chunk,
+            //             })
+            //             .await?;
+            //     }
+
+            //     // if let Err(_) = self.dispatcher.work_tx.send(job).await {}
+            // } else {
+            //     debug!("no job found")
+            // }
+
+            // sleep(Duration::new(10, 0)).await;
+        }
+    }
+    async fn schedule_tick(&self) -> Result<()> {
+        let now = Instant::now();
+        let job = {
+            let mut guard = self.queue.lock().await;
+            guard.peek().cloned()
+        };
+        if let Some(job) = job {
+            debug!("executing job {}", job.job_id);
+            {
+                let mut guard = self.queue.lock().await;
+                guard.mark_processing(&job.job_id)?;
+            }
+            let chunks = self.make_chunks(&job).await?;
+            debug!("Made {} chunk(s)", chunks.len());
+            for chunk in chunks.iter().cloned() {
+                self.dispatcher
+                    .work_tx
+                    .send(JobDispatch {
+                        job_id: job.job_id.clone(),
+                        chunk,
+                    })
+                    .await?;
             }
 
-            sleep(Duration::new(10, 0)).await;
+            // if let Err(_) = self.dispatcher.work_tx.send(job).await {}
+        } else {
+            debug!("no job found")
         }
+
+        sleep(Duration::new(10, 0)).await;
+        Ok(())
     }
     async fn make_chunks(&self, job: &Job) -> Result<Vec<Chunk>> {
         debug!("Making chunks for {}", job.doc_id);
@@ -159,10 +205,21 @@ impl Worker {
                     };
                     match job {
                         Some(job_dispatch) => {
-                            debug!("Got job dispatch! {}", job_dispatch.chunk.id);
-                            debug!("Sleeping for 3 secs {}", job_dispatch.chunk.id);
-                            sleep(Duration::new(3, 0)).await;
-                            debug!("Awoke {}", job_dispatch.chunk.id);
+                            debug!("Processing Chunk {}", job_dispatch.chunk.id);
+                            sleep(Duration::new(5, 0)).await;
+                            if let Err(err) = result_tx
+                                .send(JobResult {
+                                    entity_relationships: EntitiesRelationships {
+                                        entities: Vec::new(),
+                                        relationships: Vec::new(),
+                                    },
+                                    chunk_id: job_dispatch.chunk.id,
+                                    job_id: job_dispatch.job_id,
+                                })
+                                .await
+                            {
+                                error!(err=%err, "Error");
+                            }
                         }
                         None => break,
                     }
@@ -178,10 +235,8 @@ impl Worker {
             guard.recv().await
         };
         while let Some(ref job_dispatch) = next_job {
-            debug!("Got job dispatch! {}", job_dispatch.chunk.id);
-            debug!("Sleeping for 3 secs {}", job_dispatch.chunk.id);
-            sleep(Duration::new(3, 0)).await;
-            debug!("Awoke {}", job_dispatch.chunk.id);
+            debug!("Processing Chunk {}", job_dispatch.chunk.id);
+            sleep(Duration::new(5, 0)).await;
         }
     }
 }
@@ -248,26 +303,33 @@ impl Queue {
     }
 
     pub fn peek(&mut self) -> Option<&mut Job> {
-        let maybe_job_id = self.jobs.front();
-        if let Some(job_id) = maybe_job_id {
-            let maybe_job = self.jobs_map.get_mut(job_id);
-            if let Some(job) = maybe_job {
-                if job.next_run_at <= Instant::now() && job.job_status == JobStatus::Pending {
-                    Some(job)
-                } else {
-                    None
-                }
+        let now = Instant::now();
+        let eligible_id = self.jobs.iter().find(|job_id| {
+            if let Some(job) = self.jobs_map.get(*job_id) {
+                job.next_run_at <= now && job.job_status == JobStatus::Pending
             } else {
-                None
+                false
             }
+        })?;
+        self.jobs_map.get_mut(eligible_id)
+    }
+
+    pub fn mark_processing(&mut self, job_id: &String) -> Result<()> {
+        if let Some(job) = self.jobs_map.get_mut(job_id) {
+            job.job_status = JobStatus::Processing;
+            Ok(())
         } else {
-            None
+            Err(anyhow!("Job {job_id} doesn't exist"))
         }
     }
 
-    pub fn mark_processing(&mut self, job_id: &String) {
-        let job = self.jobs_map.get_mut(job_id);
-        job.unwrap().job_status = JobStatus::Processing;
+    pub fn mark_done(&mut self, job_id: &String) -> Result<()> {
+        if let Some(job) = self.jobs_map.get_mut(job_id) {
+            job.job_status = JobStatus::Done;
+            Ok(())
+        } else {
+            Err(anyhow!("Job {job_id} doesn't exist"))
+        }
     }
 }
 

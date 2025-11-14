@@ -75,6 +75,7 @@ async fn run() -> Result<()> {
     let (work_tx, work_rx) = mpsc::channel::<JobDispatch>(100);
     let (job_result_tx, job_result_rx) = mpsc::channel::<JobResult>(100);
     let work_rx = Arc::new(Mutex::new(work_rx));
+    let job_result_rx = Arc::new(Mutex::new(job_result_rx));
 
     let config = load_config()
         .await
