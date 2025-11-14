@@ -59,11 +59,15 @@ impl Scheduler {
         loop {
             let now = Instant::now();
             let job = {
-                let guard = self.queue.lock().await;
+                let mut guard = self.queue.lock().await;
                 guard.peek().cloned()
             };
             if let Some(job) = job {
                 debug!("executing job {}", job.job_id);
+                {
+                    let mut guard = self.queue.lock().await;
+                    guard.mark_processing(&job.job_id);
+                }
                 let chunks = self.make_chunks(&job).await?;
                 debug!("Made {} chunk(s)", chunks.len());
                 for chunk in chunks.iter().cloned() {
@@ -93,11 +97,13 @@ impl Scheduler {
             .get_by_id(&job.doc_id)
             .await?
             .ok_or_else(|| anyhow!("document missing"))?;
+
         debug!("Got content value {}", job.job_id);
         let content = content_value
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("document content field missing"))?;
+
         debug!("Got content {}", job.job_id);
         let chunk_config = ChunkConfig {
             max_tokens: self.pipeline.config.chunk_size,
@@ -241,12 +247,12 @@ impl Queue {
         self.enqueue(job.job_id.to_owned(), job)
     }
 
-    pub fn peek(&self) -> Option<&Job> {
+    pub fn peek(&mut self) -> Option<&mut Job> {
         let maybe_job_id = self.jobs.front();
         if let Some(job_id) = maybe_job_id {
-            let maybe_job = self.jobs_map.get(job_id);
+            let maybe_job = self.jobs_map.get_mut(job_id);
             if let Some(job) = maybe_job {
-                if job.next_run_at <= Instant::now() {
+                if job.next_run_at <= Instant::now() && job.job_status == JobStatus::Pending {
                     Some(job)
                 } else {
                     None
@@ -258,9 +264,14 @@ impl Queue {
             None
         }
     }
+
+    pub fn mark_processing(&mut self, job_id: &String) {
+        let job = self.jobs_map.get_mut(job_id);
+        job.unwrap().job_status = JobStatus::Processing;
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum JobStatus {
     Pending,
     Processing,
