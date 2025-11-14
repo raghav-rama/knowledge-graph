@@ -1,7 +1,12 @@
-use super::{chunker::Chunk, utils::compute_mdhash_id};
-use crate::ai::schemas::EntitiesRelationships;
+use super::{
+    chunker::{Chunk, ChunkConfig},
+    pipeline::{AppStorages, Pipeline},
+    utils::compute_mdhash_id,
+};
+use crate::{ai::schemas::EntitiesRelationships, storage::KvStorage};
 use anyhow::{Ok, Result, anyhow};
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
@@ -21,8 +26,10 @@ use crate::AppState;
 pub struct Scheduler {
     pub queue: Arc<Mutex<Queue>>,
     dispatcher: Dispatcher,
-    workers: Worker,
+    // workers: Worker,
     result_rx: Receiver<JobResult>,
+    pipeline: Arc<Pipeline>,
+    storage: Arc<AppStorages>,
 }
 
 impl Scheduler {
@@ -31,28 +38,76 @@ impl Scheduler {
         capacity: u32,
         work_tx: Sender<JobDispatch>,
         result_rx: Receiver<JobResult>,
+        pipeline: Arc<Pipeline>,
+        storage: Arc<AppStorages>,
+        work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
+        result_tx: Sender<JobResult>,
     ) -> Self {
         let queue = Arc::new(Mutex::new(Queue::new(capacity)));
-        Scheduler {
+        Worker::spawn_pool(work_rx, result_tx, 10);
+        let scheduler = Scheduler {
             queue,
             dispatcher: Dispatcher::new(work_tx, max_inflight),
-            workers: Worker::new(),
             result_rx,
-        }
+            pipeline,
+            storage,
+        };
+        // tokio::spawn(async move { worker.handle().await });
+        scheduler
     }
-    pub async fn run(&self) {
+    pub async fn run(&self) -> Result<()> {
         loop {
             let now = Instant::now();
-            let guard = self.queue.lock().await;
-            if let Some(job) = guard.peek() {
+            let job = {
+                let guard = self.queue.lock().await;
+                guard.peek().cloned()
+            };
+            if let Some(job) = job {
                 debug!("executing job {}", job.job_id);
+                let chunks = self.make_chunks(&job).await?;
+                debug!("Made {} chunk(s)", chunks.len());
+                for chunk in chunks.iter().cloned() {
+                    self.dispatcher
+                        .work_tx
+                        .send(JobDispatch {
+                            job_id: job.job_id.clone(),
+                            chunk,
+                        })
+                        .await?;
+                }
+
+                // if let Err(_) = self.dispatcher.work_tx.send(job).await {}
             } else {
                 debug!("no job found")
             }
-            drop(guard);
 
             sleep(Duration::new(10, 0)).await;
         }
+    }
+    async fn make_chunks(&self, job: &Job) -> Result<Vec<Chunk>> {
+        debug!("Making chunks for {}", job.doc_id);
+        let content_value = self
+            .pipeline
+            .storages
+            .full_docs
+            .get_by_id(&job.doc_id)
+            .await?
+            .ok_or_else(|| anyhow!("document missing"))?;
+        debug!("Got content value {}", job.job_id);
+        let content = content_value
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("document content field missing"))?;
+        debug!("Got content {}", job.job_id);
+        let chunk_config = ChunkConfig {
+            max_tokens: self.pipeline.config.chunk_size,
+            overlap_tokens: self.pipeline.config.chunk_overlap,
+            split_by_character: self.pipeline.config.split_by_character.clone(),
+            split_by_character_only: self.pipeline.config.split_by_character_only,
+        };
+        let chunks = self.pipeline.chunker.chunk(content, &chunk_config)?;
+        debug!("Exiting make_chunks {}", job.job_id);
+        Ok(chunks)
     }
 }
 
@@ -72,19 +127,55 @@ impl Dispatcher {
     }
 }
 
-struct WorkerHandles {
-    work_rx: Receiver<JobDispatch>,
+struct Worker {
+    work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
     result_tx: Sender<JobResult>,
 }
 
-struct Worker {
-    handler: Vec<WorkerHandles>,
-}
-
 impl Worker {
-    pub fn new() -> Self {
-        Worker {
-            handler: Vec::new(),
+    pub fn new(work_rx: Arc<Mutex<Receiver<JobDispatch>>>, result_tx: Sender<JobResult>) -> Self {
+        Worker { work_rx, result_tx }
+    }
+
+    pub fn spawn_pool(
+        work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
+        result_tx: Sender<JobResult>,
+        size: usize,
+    ) {
+        for _ in 0..size {
+            let work_rx = work_rx.clone();
+            let result_tx = result_tx.clone();
+            tokio::spawn(async move {
+                loop {
+                    let job = {
+                        let mut guard = work_rx.lock().await;
+                        guard.recv().await
+                    };
+                    match job {
+                        Some(job_dispatch) => {
+                            debug!("Got job dispatch! {}", job_dispatch.chunk.id);
+                            debug!("Sleeping for 3 secs {}", job_dispatch.chunk.id);
+                            sleep(Duration::new(3, 0)).await;
+                            debug!("Awoke {}", job_dispatch.chunk.id);
+                        }
+                        None => break,
+                    }
+                }
+            });
+        }
+    }
+
+    pub async fn handle(&mut self) {
+        let work_rx = self.work_rx.clone();
+        let next_job = {
+            let mut guard = work_rx.lock().await;
+            guard.recv().await
+        };
+        while let Some(ref job_dispatch) = next_job {
+            debug!("Got job dispatch! {}", job_dispatch.chunk.id);
+            debug!("Sleeping for 3 secs {}", job_dispatch.chunk.id);
+            sleep(Duration::new(3, 0)).await;
+            debug!("Awoke {}", job_dispatch.chunk.id);
         }
     }
 }
@@ -134,6 +225,7 @@ impl Queue {
     pub fn dequeue(&mut self) -> Option<Job> {
         let maybe_job_id = self.jobs.pop_front();
         if let Some(job_id) = maybe_job_id {
+            debug!("Dequeing {}", job_id);
             self.jobs_map.remove(&job_id)
         } else {
             None
@@ -141,6 +233,7 @@ impl Queue {
     }
 
     pub fn requeue(&mut self, mut job: Job) -> Result<String> {
+        debug!("Requeing {}", job.job_id);
         job.next_run_at = Instant::now(); // update next_run_at
         if job.current_retry > job.max_retries {
             return Err(anyhow!("Max retries reachd"));
@@ -167,6 +260,7 @@ impl Queue {
     }
 }
 
+#[derive(Clone)]
 enum JobStatus {
     Pending,
     Processing,
@@ -175,9 +269,10 @@ enum JobStatus {
     PartiallyFailed,
 }
 
+#[derive(Clone)]
 pub struct Job {
     pub job_id: String,
-    doc_id: String,
+    pub doc_id: String,
     max_retries: u8,
     current_retry: u8,
     job_status: JobStatus,
@@ -205,6 +300,7 @@ impl Job {
     }
 }
 
+#[derive(Clone)]
 struct ChunkState {
     chunk_id: String,
     chunk_status: ChunkStatus,
@@ -215,6 +311,7 @@ struct ChunkState {
     created_at: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 enum ChunkStatus {
     Success,
     Failed,

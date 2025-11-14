@@ -63,15 +63,15 @@ impl Default for PipelineConfig {
 }
 
 pub struct Pipeline {
-    storages: Arc<AppStorages>,
-    doc_manager: DocumentManager,
-    chunker: Arc<dyn Chunker>,
-    extractor: Arc<dyn DocumentExtractor>,
-    entity_relationship_extractor: Arc<dyn EntityRelationshipExtractor>,
-    status_service: DocStatusService,
-    error_reporter: ErrorReporter,
-    processing_lock: Arc<Mutex<()>>,
-    config: PipelineConfig,
+    pub storages: Arc<AppStorages>,
+    pub doc_manager: DocumentManager,
+    pub chunker: Arc<dyn Chunker>,
+    pub extractor: Arc<dyn DocumentExtractor>,
+    pub entity_relationship_extractor: Arc<dyn EntityRelationshipExtractor>,
+    pub status_service: DocStatusService,
+    pub error_reporter: ErrorReporter,
+    pub processing_lock: Arc<Mutex<()>>,
+    pub config: PipelineConfig,
 }
 
 impl Pipeline {

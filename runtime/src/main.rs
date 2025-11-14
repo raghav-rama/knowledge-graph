@@ -11,9 +11,12 @@ use tokio::{
     fs,
     net::TcpListener,
     signal,
-    sync::mpsc::{self as mpsc, Receiver, Sender},
+    sync::{
+        Mutex,
+        mpsc::{self as mpsc, Receiver, Sender},
+    },
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod ai;
@@ -71,12 +74,7 @@ async fn run() -> Result<()> {
 
     let (work_tx, work_rx) = mpsc::channel::<JobDispatch>(100);
     let (job_result_tx, job_result_rx) = mpsc::channel::<JobResult>(100);
-    // scheduler
-    let scheduler = Arc::new(Scheduler::new(10, 5, work_tx, job_result_rx));
-    let _scheduler = scheduler.clone();
-    tokio::spawn(async move {
-        _scheduler.run().await;
-    });
+    let work_rx = Arc::new(Mutex::new(work_rx));
 
     let config = load_config()
         .await
@@ -155,6 +153,26 @@ async fn run() -> Result<()> {
         document_manager,
         ai_client.clone(),
     ));
+
+    // scheduler
+    let scheduler = Arc::new(Scheduler::new(
+        10,
+        5,
+        work_tx,
+        job_result_rx,
+        pipeline.clone(),
+        storages.clone(),
+        work_rx,
+        job_result_tx,
+    ));
+    let _scheduler = scheduler.clone();
+    tokio::spawn(async move {
+        let join_handle = _scheduler.run().await;
+        match join_handle {
+            Ok(()) => debug!("All good"),
+            Err(err) => error!(err=%err, "Error"),
+        }
+    });
 
     let state = Arc::new(AppState {
         config: Arc::new(config.clone()),

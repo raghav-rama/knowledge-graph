@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use rand::{Rng, rng, seq::SliceRandom};
 use serde::Serialize;
 use tokio::fs;
 use tracing::{debug, error, info, warn};
@@ -152,12 +153,15 @@ async fn upload_to_input_dir(
     let scheduler = state.scheduler.clone();
     let mut guard = scheduler.queue.lock().await;
 
-    let job = Job::new(random_string(7));
+    let job = Job::new(String::from(
+        "doc-0b848f200e91a3de05babf664421ca6f1d57044f2868dd17f397d36f02f12c76",
+    ));
     let result = guard.enqueue(job.job_id.clone(), job);
     match result {
         Ok(job_id) => debug!("Enqueued {}", job_id),
         Err(err) => error!(error=%err, "Error"),
     }
+    drop(guard);
 
     let existing_doc = state
         .storages
@@ -246,8 +250,6 @@ fn map_status(status: &crate::storage::DocStatus) -> String {
         DocStatus::ALL => "All".to_string(),
     }
 }
-
-use rand::{Rng, rng, seq::SliceRandom};
 
 fn random_string(len: usize) -> String {
     let ss = b"ABCDEF1234567890";
