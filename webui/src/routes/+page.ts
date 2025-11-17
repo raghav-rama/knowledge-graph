@@ -1,4 +1,5 @@
 import type { DocumentRow } from '$lib/components/DocumentTable.svelte';
+import { apiFetch } from '$lib/api';
 import type { PageLoad } from './$types';
 
 type BackendDocument = {
@@ -52,7 +53,7 @@ export const load: PageLoad = async ({ fetch }) => {
 	let documents: DocumentRow[] = [];
 
 	try {
-		const response = await fetch('/api/');
+		const response = await apiFetch('/', undefined, fetch);
 		if (response.ok) {
 			greeting = await response.text();
 		} else {
@@ -63,7 +64,7 @@ export const load: PageLoad = async ({ fetch }) => {
 	}
 
 	try {
-		const response = await fetch('/api/documents');
+		const response = await apiFetch('/documents', undefined, fetch);
 		if (response.ok) {
 			const payload = (await response.json()) as DocumentListResponse;
 			if (Array.isArray(payload.documents)) {

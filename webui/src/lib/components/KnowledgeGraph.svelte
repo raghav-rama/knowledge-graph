@@ -5,6 +5,7 @@
 	import type { EntityResponse } from '$lib/codegen/types/EntityResponse';
 	import type { GraphResponse } from '$lib/codegen/types/GraphResponse';
 	import type { RelationshipEdgeResponse } from '$lib/codegen/types/RelationshipEdgeResponse';
+	import { apiFetch } from '$lib/api';
 
 	const entitySchema = z.object({
 		id: z.string(),
@@ -98,7 +99,7 @@
 	};
 
 	async function fetchGraph(): Promise<GraphResponse> {
-		const response = await fetch('/api/graph');
+		const response = await apiFetch('/graph');
 		if (!response.ok) {
 			throw new Error(`Failed to load graph (${response.status})`);
 		}

@@ -6,6 +6,7 @@
 	import StatusFooter from '$lib/components/StatusFooter.svelte';
 	import Toolbar, { type ToolbarAction } from '$lib/components/Toolbar.svelte';
 	import TopNav, { type NavTab } from '$lib/components/TopNav.svelte';
+	import { apiFetch } from '$lib/api';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -169,7 +170,7 @@
 
 	const refreshDocuments = async (showStatus = false) => {
 		try {
-			const response = await fetch('/api/documents');
+			const response = await apiFetch('/documents');
 			if (!response.ok) {
 				throw new Error(`${response.status} ${response.statusText}`);
 			}
@@ -255,7 +256,7 @@
 			const formData = new FormData();
 			formData.append('file', file);
 
-			const response = await fetch('/api/documents/upload', {
+			const response = await apiFetch('/documents/upload', {
 				method: 'POST',
 				body: formData
 			});
