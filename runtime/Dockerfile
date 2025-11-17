@@ -24,6 +24,9 @@ ENV PATH="/root/.cargo/bin:${PATH}" \
 
 COPY Cargo.toml Cargo.lock ./
 COPY runtime/Cargo.toml runtime/
+RUN mkdir -p runtime/src \
+    && printf 'fn main() {}' > runtime/src/main.rs \
+    && printf '' > runtime/src/lib.rs
 RUN cargo fetch --locked
 COPY runtime/ runtime/
 RUN cargo build --locked --release
