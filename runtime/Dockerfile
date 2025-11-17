@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
     cmake \
     protobuf-compiler \
+    libprotobuf-dev \
     libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
