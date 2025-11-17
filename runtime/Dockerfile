@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
 ARG RUST_VERSION=1.89.0
+ARG CUDA_VERSION=12.6.2
 ARG UBUNTU_VERSION=22.04
 
-FROM ubuntu:${UBUNTU_VERSION} AS builder
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS builder
 ARG RUST_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
@@ -16,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     clang \
     cmake \
+    protobuf-compiler \
     libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
@@ -31,7 +33,7 @@ RUN cargo fetch --locked
 COPY runtime/ runtime/
 RUN cargo build --locked --release
 
-FROM ubuntu:${UBUNTU_VERSION} AS runtime
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
