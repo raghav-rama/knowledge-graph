@@ -114,9 +114,14 @@ impl Scheduler {
         let now = Instant::now();
         let job = {
             let mut guard = self.queue.lock().await;
+            if let Some(job) = guard.peek() {
+                let chunks = self.get_pending_chunks_for_doc(&job.doc_id).await?;
+                let chunks_state = chunk_to_chunk_state(chunks);
+                job.chunks = chunks_state;
+            }
             guard.peek().cloned()
         };
-        if let Some(mut job) = job {
+        if let Some(job) = job {
             debug!("executing job {}", job.job_id);
             let chunks = self.get_pending_chunks_for_doc(&job.doc_id).await?;
             let chunk_ids = chunks
@@ -141,7 +146,6 @@ impl Scheduler {
                         .await?;
                 }
             }
-            job.chunks = chunks_state;
             for chunk in job.chunks.iter().cloned() {
                 self.dispatcher
                     .work_tx
@@ -277,6 +281,17 @@ impl Worker {
                             //     let mut guard = scheduler.queue.lock().await;
                             //     guard.jobs_map.get_mut(&job_dispatch.job_id)
                             // };
+
+                            {
+                                let mut guard = scheduler.queue.lock().await;
+                                if let Some(job) = guard.jobs_map.get_mut(&job_dispatch.job_id) {
+                                    if let Some(chunk) = job.chunks.iter_mut().find(|chunk| {
+                                        &chunk.chunk_id == &job_dispatch.chunk.chunk_id
+                                    }) {
+                                        chunk.chunk_status = ChunkStatus::Running;
+                                    }
+                                }
+                            };
 
                             let result = pipeline
                                 .entity_relationship_extractor
