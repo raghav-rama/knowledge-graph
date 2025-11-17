@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
 ARG RUST_VERSION=1.82.0
-ARG CUDA_VERSION=12.6.2
 ARG UBUNTU_VERSION=22.04
 
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS builder
+FROM ubuntu:${UBUNTU_VERSION} AS builder
+ARG RUST_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,7 +28,7 @@ RUN cargo fetch --locked
 COPY runtime/ runtime/
 RUN cargo build --locked --release
 
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
+FROM ubuntu:${UBUNTU_VERSION} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
