@@ -13,4 +13,4 @@ chunk_config:
   split_by_character_only: false
 messages:
   greeting: "Hello, World from Axum!!"
-working_dir: "pgv-data"
+working_dir: "pgv-data-test"

@@ -3,10 +3,12 @@ use super::{
     pipeline::{AppStorages, Pipeline},
     utils::compute_mdhash_id,
 };
-use crate::{ai::schemas::EntitiesRelationships, storage::KvStorage};
+use crate::{
+    ai::schemas::EntitiesRelationships, pipeline::utils::chunk_to_chunk_state, storage::KvStorage,
+};
 use anyhow::{Ok, Result, anyhow};
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde_json::{self as serde_json, Value};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     result,
@@ -24,6 +26,7 @@ use tracing::{debug, error};
 
 use crate::AppState;
 
+#[derive(Clone)]
 pub struct Scheduler {
     pub queue: Arc<Mutex<Queue>>,
     dispatcher: Dispatcher,
@@ -108,15 +111,17 @@ impl Scheduler {
             let mut guard = self.queue.lock().await;
             guard.peek().cloned()
         };
-        if let Some(job) = job {
+        if let Some(mut job) = job {
             debug!("executing job {}", job.job_id);
             {
                 let mut guard = self.queue.lock().await;
                 guard.mark_processing(&job.job_id)?;
             }
-            let chunks = self.make_chunks(&job).await?;
-            debug!("Made {} chunk(s)", chunks.len());
-            for chunk in chunks.iter().cloned() {
+            let chunks = self.get_pending_chunks_for_doc(&job.doc_id).await?;
+            let chunks_state = chunk_to_chunk_state(chunks);
+            debug!("Made {} chunk(s)", chunks_state.len());
+            job.chunks = chunks_state;
+            for chunk in job.chunks.iter().cloned() {
                 self.dispatcher
                     .work_tx
                     .send(JobDispatch {
@@ -134,6 +139,40 @@ impl Scheduler {
         sleep(Duration::new(10, 0)).await;
         Ok(())
     }
+
+    async fn get_pending_chunks_for_doc(&self, doc_id: &str) -> Result<Vec<Chunk>> {
+        let all = self.pipeline.storages.text_chunks.get_all().await?;
+        let pending_chunks: HashMap<String, Value> = all
+            .iter()
+            .filter_map(|(chunk_id, value)| {
+                if value.get("status").and_then(Value::as_str) == Some("Pending")
+                    && value.get("full_doc_id").and_then(Value::as_str) == Some(doc_id)
+                {
+                    Some((chunk_id.clone(), value.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let vec = pending_chunks
+            .into_iter()
+            .filter_map(|(chunk_id, value)| {
+                let content = value.get("content")?.as_str()?.to_owned();
+                let order = value.get("chunk_order_index")?.as_u64()? as usize;
+                let token_count_field = value.get("token").or_else(|| value.get("tokens"))?;
+                let token_count = token_count_field.as_i64()?;
+                Some(Chunk {
+                    id: chunk_id,
+                    content,
+                    order,
+                    token_count,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(vec)
+    }
+
     async fn make_chunks(&self, job: &Job) -> Result<Vec<Chunk>> {
         debug!("Making chunks for {}", job.doc_id);
         let content_value = self
@@ -163,6 +202,7 @@ impl Scheduler {
     }
 }
 
+#[derive(Clone)]
 struct Dispatcher {
     work_tx: Sender<JobDispatch>,
     max_inflight: u8,
@@ -205,7 +245,7 @@ impl Worker {
                     };
                     match job {
                         Some(job_dispatch) => {
-                            debug!("Processing Chunk {}", job_dispatch.chunk.id);
+                            debug!("Processing Chunk {}", job_dispatch.chunk.chunk_id);
                             sleep(Duration::new(5, 0)).await;
                             if let Err(err) = result_tx
                                 .send(JobResult {
@@ -213,7 +253,7 @@ impl Worker {
                                         entities: Vec::new(),
                                         relationships: Vec::new(),
                                     },
-                                    chunk_id: job_dispatch.chunk.id,
+                                    chunk_id: job_dispatch.chunk.chunk_id,
                                     job_id: job_dispatch.job_id,
                                 })
                                 .await
@@ -235,7 +275,7 @@ impl Worker {
             guard.recv().await
         };
         while let Some(ref job_dispatch) = next_job {
-            debug!("Processing Chunk {}", job_dispatch.chunk.id);
+            debug!("Processing Chunk {}", job_dispatch.chunk.chunk_id);
             sleep(Duration::new(5, 0)).await;
         }
     }
@@ -243,7 +283,7 @@ impl Worker {
 
 pub struct JobDispatch {
     job_id: String,
-    chunk: Chunk,
+    chunk: ChunkState,
 }
 
 pub struct JobResult {
@@ -374,18 +414,20 @@ impl Job {
 }
 
 #[derive(Clone)]
-struct ChunkState {
-    chunk_id: String,
-    chunk_status: ChunkStatus,
-    error: Option<String>,
-    output: Option<String>,
-    max_retries: u8,
-    current_retry: u8,
-    created_at: DateTime<Utc>,
+pub struct ChunkState {
+    pub chunk_id: String,
+    pub chunk_status: ChunkStatus,
+    pub content: String,
+    pub error: Option<String>,
+    pub output: Option<String>,
+    pub max_retries: u8,
+    pub current_retry: u8,
+    pub created_at: DateTime<Utc>,
+    pub oai_resp_id: Option<String>,
 }
 
 #[derive(Clone)]
-enum ChunkStatus {
+pub enum ChunkStatus {
     Success,
     Failed,
     Pending,

@@ -151,17 +151,17 @@ async fn upload_to_input_dir(
         ));
     }
     let scheduler = state.scheduler.clone();
-    let mut guard = scheduler.queue.lock().await;
+    // let mut guard = scheduler.queue.lock().await;
 
-    let job = Job::new(String::from(
-        "doc-0b848f200e91a3de05babf664421ca6f1d57044f2868dd17f397d36f02f12c76",
-    ));
-    let result = guard.enqueue(job.job_id.clone(), job);
-    match result {
-        Ok(job_id) => debug!("Enqueued {}", job_id),
-        Err(err) => error!(error=%err, "Error"),
-    }
-    drop(guard);
+    // let job = Job::new(String::from(
+    //     "doc-0b848f200e91a3de05babf664421ca6f1d57044f2868dd17f397d36f02f12c76",
+    // ));
+    // let result = guard.enqueue(job.job_id.clone(), job);
+    // match result {
+    //     Ok(job_id) => debug!("Enqueued {}", job_id),
+    //     Err(err) => error!(error=%err, "Error"),
+    // }
+    // drop(guard);
 
     let existing_doc = state
         .storages
@@ -223,7 +223,7 @@ async fn upload_to_input_dir(
     let background_pipeline = pipeline.clone();
 
     tokio::spawn(async move {
-        if let Err(err) = background_pipeline.process_queue().await {
+        if let Err(err) = background_pipeline.enqueue_pending_docs(scheduler).await {
             warn!(error = %err, "background pipeline processing failed");
         }
     });

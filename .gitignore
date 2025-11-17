@@ -1,7 +1,7 @@
 target
 node_modules
 .DS_Store
-pgv-data
+pgv-data*
 .env
 data
 *.log

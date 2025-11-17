@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
+use serde::Deserialize;
 
 use crate::pipeline::utils::{Tokenizer, chunking_by_token_size, compute_mdhash_id};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Chunk {
     pub id: String,
     pub content: String,

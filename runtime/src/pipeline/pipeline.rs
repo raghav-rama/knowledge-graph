@@ -23,6 +23,7 @@ use super::{
     document_manager::DocumentManager,
     error_reporter::ErrorReporter,
     extractor::{DocumentExtractor, EntityRelationshipExtract, EntityRelationshipExtractor},
+    scheduler::{Job, Scheduler},
     status_service::{DocStatusService, PendingDocument},
     utils::{TiktokenTokenizer, Tokenizer, compute_mdhash_id},
 };
@@ -161,6 +162,43 @@ impl Pipeline {
         }
 
         Ok(track_id)
+    }
+
+    pub async fn enqueue_pending_docs(&self, scheduler: Arc<Scheduler>) -> Result<()> {
+        let mut pending = self
+            .storages
+            .doc_status
+            .docs_by_status(&DocStatus::PENDING)
+            .await?;
+
+        if pending.is_empty() {
+            info!("no pending documents to process");
+            return Ok(());
+        }
+
+        for (doc_id, status) in pending.drain() {
+            let mut guard = scheduler.queue.lock().await;
+            let job = Job::new(doc_id.clone());
+            if let Err(err) = guard.enqueue(job.job_id.clone(), job) {
+                error!(error = %err, doc_id = %doc_id, "failed to enqueue doc");
+                for (depth, cause) in err.chain().skip(1).enumerate() {
+                    error!(
+                        doc_id=%doc_id,
+                        cause_depth=depth+1,
+                        cause=%cause,
+                        "caused by"
+                    );
+                }
+                if let Err(status_err) = self
+                    .status_service
+                    .mark_failed(&doc_id, &status, &err)
+                    .await
+                {
+                    error!(error = %status_err, doc_id = %doc_id, "failed to mark document as failed");
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn process_queue(&self) -> Result<()> {
@@ -375,6 +413,46 @@ impl Pipeline {
         Ok(())
     }
 
+    async fn store_chunks(
+        &self,
+        content: &str,
+        doc_id: &str,
+        file_path: &str,
+        track_id: &str,
+    ) -> Result<()> {
+        let chunk_config = ChunkConfig {
+            max_tokens: self.config.chunk_size,
+            overlap_tokens: self.config.chunk_overlap,
+            split_by_character: self.config.split_by_character.clone(),
+            split_by_character_only: self.config.split_by_character_only,
+        };
+
+        let chunks = self.chunker.chunk(content, &chunk_config)?;
+
+        let chunk_map: HashMap<String, Value> = chunks
+            .iter()
+            .map(|chunk| {
+                let obj = json!({
+                    "content": chunk.content.clone(),
+                    "full_doc_id": doc_id ,
+                    "chunk_order_index": chunk.order,
+                    "file_path": file_path,
+                    "token": chunk.token_count,
+                    "status": "Pending"
+                });
+                (chunk.id.clone(), obj)
+            })
+            .collect();
+
+        if !chunk_map.is_empty() {
+            self.storages.text_chunks.upsert(chunk_map).await?;
+        }
+
+        self.persist_all().await?;
+
+        Ok(())
+    }
+
     async fn enqueue_documents(&self, docs: Vec<DocumentInput>, track_id: &str) -> Result<()> {
         if docs.is_empty() {
             return Ok(());
@@ -416,6 +494,8 @@ impl Pipeline {
             if let Some((content, path)) = contents.remove(&doc_id) {
                 let summary = summarize_content(&content);
                 let length = content.chars().count() as i64;
+                self.store_chunks(&content, &doc_id, &path, track_id)
+                    .await?;
                 pending.push(PendingDocument {
                     id: doc_id,
                     content,

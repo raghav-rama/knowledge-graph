@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-    pipeline::types::{EntityNode, RelationEdge},
+    pipeline::{
+        chunker::Chunk,
+        scheduler::{ChunkState, ChunkStatus},
+        types::{EntityNode, RelationEdge},
+    },
     storage::{JsonKvStorage, KvStorage},
 };
 use anyhow::{Result, anyhow};
+use chrono::Utc;
 use tiktoken_rs::{CoreBPE, o200k_base};
 
 pub trait Tokenizer: Send + Sync {
@@ -163,4 +168,21 @@ pub async fn get_all_relationships(s: &JsonKvStorage) -> Result<HashMap<String, 
     }
 
     Ok(relations)
+}
+
+pub fn chunk_to_chunk_state(chunks: Vec<Chunk>) -> Vec<ChunkState> {
+    chunks
+        .iter()
+        .map(|chunk| ChunkState {
+            chunk_id: chunk.id.clone(),
+            chunk_status: ChunkStatus::Pending,
+            content: chunk.content.clone(),
+            error: None,
+            output: None,
+            max_retries: 10,
+            current_retry: 0,
+            created_at: Utc::now(),
+            oai_resp_id: None,
+        })
+        .collect()
 }
