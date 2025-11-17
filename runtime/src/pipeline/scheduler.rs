@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{self as serde_json, Value};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    result,
+    result::Result::{Err as StdErr, Ok as StdOk},
     sync::Arc,
     time::Duration,
 };
@@ -49,15 +49,20 @@ impl Scheduler {
     ) -> Self {
         let queue = Arc::new(Mutex::new(Queue::new(capacity)));
 
-        Worker::spawn_pool(work_rx, result_tx, 10); // spawn 10 concurrent ER extraction workers
-
         let scheduler = Scheduler {
             queue,
             dispatcher: Dispatcher::new(work_tx, max_inflight),
             result_rx,
-            pipeline,
+            pipeline: pipeline.clone(),
             storage,
         };
+        Worker::spawn_pool(
+            pipeline.clone(),
+            Arc::new(scheduler.clone()),
+            work_rx,
+            result_tx,
+            10,
+        ); // spawn 10 concurrent ER extraction workers
         // tokio::spawn(async move { worker.handle().await });
         scheduler
     }
@@ -70,8 +75,8 @@ impl Scheduler {
                 maybe_result = guard.recv() => {
                     if let Some(job_result) = maybe_result {
                         debug!("Chunk processed {}", job_result.chunk_id);
+                        let er = job_result.entity_relationships;
                     }
-
                 }
             };
             // let now = Instant::now();
@@ -113,13 +118,29 @@ impl Scheduler {
         };
         if let Some(mut job) = job {
             debug!("executing job {}", job.job_id);
+            let chunks = self.get_pending_chunks_for_doc(&job.doc_id).await?;
+            let chunk_ids = chunks
+                .iter()
+                .map(|chunk| chunk.id.clone())
+                .collect::<Vec<String>>();
+            let chunks_state = chunk_to_chunk_state(chunks);
+            debug!("Made {} chunk(s)", chunks_state.len());
             {
                 let mut guard = self.queue.lock().await;
                 guard.mark_processing(&job.job_id)?;
+                if let Some(doc) = self
+                    .pipeline
+                    .storages
+                    .doc_status
+                    .get_by_id(&job.doc_id)
+                    .await?
+                {
+                    self.pipeline
+                        .status_service
+                        .mark_processing(&job.doc_id, &doc, &chunk_ids)
+                        .await?;
+                }
             }
-            let chunks = self.get_pending_chunks_for_doc(&job.doc_id).await?;
-            let chunks_state = chunk_to_chunk_state(chunks);
-            debug!("Made {} chunk(s)", chunks_state.len());
             job.chunks = chunks_state;
             for chunk in job.chunks.iter().cloned() {
                 self.dispatcher
@@ -146,7 +167,8 @@ impl Scheduler {
             .iter()
             .filter_map(|(chunk_id, value)| {
                 if value.get("status").and_then(Value::as_str) == Some("Pending")
-                    && value.get("full_doc_id").and_then(Value::as_str) == Some(doc_id)
+                    || value.get("status").and_then(Value::as_str) == Some("Failed")
+                        && value.get("full_doc_id").and_then(Value::as_str) == Some(doc_id)
                 {
                     Some((chunk_id.clone(), value.clone()))
                 } else {
@@ -230,35 +252,111 @@ impl Worker {
     }
 
     pub fn spawn_pool(
+        pipeline: Arc<Pipeline>,
+        scheduler: Arc<Scheduler>,
         work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
         result_tx: Sender<JobResult>,
         size: usize,
     ) {
         for _ in 0..size {
+            let pipeline = pipeline.clone();
+            let scheduler = scheduler.clone();
             let work_rx = work_rx.clone();
             let result_tx = result_tx.clone();
             tokio::spawn(async move {
                 loop {
-                    let job = {
+                    let maybe_job_dispatch = {
                         let mut guard = work_rx.lock().await;
                         guard.recv().await
                     };
-                    match job {
+                    match maybe_job_dispatch {
                         Some(job_dispatch) => {
                             debug!("Processing Chunk {}", job_dispatch.chunk.chunk_id);
-                            sleep(Duration::new(5, 0)).await;
-                            if let Err(err) = result_tx
-                                .send(JobResult {
-                                    entity_relationships: EntitiesRelationships {
-                                        entities: Vec::new(),
-                                        relationships: Vec::new(),
-                                    },
-                                    chunk_id: job_dispatch.chunk.chunk_id,
-                                    job_id: job_dispatch.job_id,
+
+                            // let job = {
+                            //     let mut guard = scheduler.queue.lock().await;
+                            //     guard.jobs_map.get_mut(&job_dispatch.job_id)
+                            // };
+
+                            let result = pipeline
+                                .entity_relationship_extractor
+                                .extract_entities_and_relationships(&Chunk {
+                                    id: job_dispatch.chunk.chunk_id.clone(),
+                                    content: job_dispatch.chunk.content.clone(),
+                                    order: 0,
+                                    token_count: 0,
                                 })
-                                .await
-                            {
-                                error!(err=%err, "Error");
+                                .await;
+                            match result {
+                                StdOk(entity_relationships) => {
+                                    debug!(
+                                        "Extracted {} entities and {} relationships",
+                                        entity_relationships.entities.len(),
+                                        entity_relationships.relationships.len()
+                                    );
+                                    if let StdOk(Some(mut chunk_record)) = pipeline
+                                        .storages
+                                        .text_chunks
+                                        .get_by_id(&job_dispatch.chunk.chunk_id)
+                                        .await
+                                    {
+                                        chunk_record["status"] = Value::String("Success".into());
+                                        let mut update = HashMap::new();
+                                        update.insert(
+                                            job_dispatch.chunk.chunk_id.clone(),
+                                            chunk_record,
+                                        );
+                                        if let Err(store_err) =
+                                            pipeline.storages.text_chunks.upsert(update).await
+                                        {
+                                            error!(error = %store_err, "failed to persist chunk success");
+                                        } else if let Err(sync_err) =
+                                            pipeline.storages.text_chunks.sync_if_dirty().await
+                                        {
+                                            error!(error=%sync_err, "failed to flush chunk failure");
+                                        }
+                                    }
+                                    if let StdErr(err) = result_tx
+                                        .send(JobResult {
+                                            entity_relationships,
+                                            chunk_id: job_dispatch.chunk.chunk_id,
+                                            job_id: job_dispatch.job_id,
+                                        })
+                                        .await
+                                    {
+                                        error!(err=%err, "Error");
+                                    }
+                                }
+                                StdErr(err) => {
+                                    error!(error=%err, "Got error in extracting entity relationship");
+                                    for (depth, err) in err.chain().skip(1).enumerate() {
+                                        error!(depth=%depth, error=%err, chunk_id=%job_dispatch.chunk.chunk_id, "caused by");
+                                    }
+
+                                    if let StdOk(Some(mut chunk_record)) = pipeline
+                                        .storages
+                                        .text_chunks
+                                        .get_by_id(&job_dispatch.chunk.chunk_id)
+                                        .await
+                                    {
+                                        chunk_record["status"] = Value::String("Failed".into());
+                                        chunk_record["error"] = Value::String(err.to_string());
+                                        let mut update = HashMap::new();
+                                        update.insert(
+                                            job_dispatch.chunk.chunk_id.clone(),
+                                            chunk_record,
+                                        );
+                                        if let Err(store_err) =
+                                            pipeline.storages.text_chunks.upsert(update).await
+                                        {
+                                            error!(error=%store_err, "failed to persist chunk failure");
+                                        } else if let Err(sync_err) =
+                                            pipeline.storages.text_chunks.sync_if_dirty().await
+                                        {
+                                            error!(error=%sync_err, "failed to flush chunk failure");
+                                        }
+                                    }
+                                }
                             }
                         }
                         None => break,
@@ -366,6 +464,15 @@ impl Queue {
     pub fn mark_done(&mut self, job_id: &String) -> Result<()> {
         if let Some(job) = self.jobs_map.get_mut(job_id) {
             job.job_status = JobStatus::Done;
+            Ok(())
+        } else {
+            Err(anyhow!("Job {job_id} doesn't exist"))
+        }
+    }
+
+    pub fn mark_failed(&mut self, job_id: &String) -> Result<()> {
+        if let Some(job) = self.jobs_map.get_mut(job_id) {
+            job.job_status = JobStatus::Failed;
             Ok(())
         } else {
             Err(anyhow!("Job {job_id} doesn't exist"))

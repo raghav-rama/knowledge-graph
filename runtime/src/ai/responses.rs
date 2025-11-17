@@ -122,7 +122,7 @@ impl ResponsesClient {
                                     .or_else(|| payload.pointer("/last_error/message"))
                                     .and_then(Value::as_str)
                                     .unwrap_or("no detail provided");
-                                anyhow::bail!("OpenAI background responses | status={status} | detail={detail}, response_id={id}");
+                                return Err(anyhow::anyhow!("OpenAI background responses | status={status} | detail={detail}, response_id={id}"));
                             }
                             _ => debug!(response_id = id, "background job still running"),
                         }
@@ -133,7 +133,7 @@ impl ResponsesClient {
                         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                             warn!(response_id=id, %status, "transient poll failure; retrying");
                         } else {
-                            anyhow::bail!("OpenAI poll returned {}: {}", status, body);
+                            return Err(anyhow::anyhow!("OpenAI poll returned {}: {}", status, body));
                         }
                     }
                     Ok(Err(err)) => {
@@ -237,8 +237,8 @@ impl ResponsesClient {
                 .await
                 .with_context(|| "Error getting error text from OpenAI")
                 .unwrap_or_default();
-            anyhow::bail!("OpenAI error {}: {}", status, err_txt);
+            return Err(anyhow::anyhow!("OpenAI error {}: {}", status, err_txt));
         }
-        anyhow::bail!("Retries exhausted")
+        Err(anyhow::anyhow!("Retries exhausted"))
     }
 }
