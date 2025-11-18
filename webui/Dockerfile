@@ -27,8 +27,9 @@ ENV NODE_ENV=production \
     PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL} \
     HOST=0.0.0.0 \
     PORT=3000
-WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
+WORKDIR /app/webui
+COPY --from=builder /app/node_modules /app/node_modules
+COPY --from=builder /app/webui/node_modules ./node_modules
 COPY --from=builder /app/webui/build ./build
 COPY --from=builder /app/webui/package.json ./package.json
 EXPOSE 3000
