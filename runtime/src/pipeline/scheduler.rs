@@ -61,8 +61,8 @@ impl Scheduler {
             Arc::new(scheduler.clone()),
             work_rx,
             result_tx,
-            10,
-        ); // spawn 10 concurrent ER extraction workers
+            20,
+        ); // spawn `n` concurrent ER extraction workers
         // tokio::spawn(async move { worker.handle().await });
         scheduler
     }
@@ -125,6 +125,47 @@ impl Scheduler {
                     }
                 }
             };
+            {
+                let mut guard = self.queue.lock().await;
+                let job_id = if let Some(job) = guard.jobs_map.get(&job_result.job_id) {
+                    if !job.chunks.iter().any(|chunk| {
+                        matches!(
+                            chunk.chunk_status,
+                            ChunkStatus::Pending | ChunkStatus::Running
+                        )
+                    }) {
+                        Some(&job.job_id.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                // TODO: ADD CHECK FOR FAILED ALSO
+                // ABOVE LOGIC FAILS IF ALL CHUNKS ARE FAILED
+                if let Some(job_id) = job_id {
+                    guard.mark_done(job_id)?;
+                    if let Some(job) = guard.jobs_map.get(job_id) {
+                        let chunk_ids = job
+                            .chunks
+                            .iter()
+                            .map(|chunk| chunk.chunk_id.clone())
+                            .collect::<Vec<_>>();
+                        if let Some(doc) = self
+                            .pipeline
+                            .storages
+                            .doc_status
+                            .get_by_id(&job_result.doc_id)
+                            .await?
+                        {
+                            self.pipeline
+                                .status_service
+                                .mark_processed(&job_result.doc_id, &doc, &chunk_ids)
+                                .await?;
+                        }
+                    }
+                }
+            }
             let entities = er.entities;
             let relationships = er.relationships;
             let mut entities_to_upsert: HashMap<String, Value> = HashMap::new();
@@ -169,8 +210,8 @@ impl Scheduler {
                 relationships_to_upsert.insert(relation_id, json!({
                     "source_entity_id": entity_name_to_entity_id_mapping.get(&relationship.source_entity),
                     "target_entity_id": entity_name_to_entity_id_mapping.get(&relationship.target_entity),
-                    "keywords": relationship.relationship_keywords,
-                    "description": relationship.relationship_description,
+                    "relationship_keywords": relationship.relationship_keywords,
+                    "relationship_description": relationship.relationship_description,
                     "doc_id": job_result.doc_id,
                     "chunk_id": job_result.chunk_id,
                 }));
@@ -244,7 +285,7 @@ impl Scheduler {
 
             // if let Err(_) = self.dispatcher.work_tx.send(job).await {}
         } else {
-            debug!("no job found")
+            debug!("no job queued")
         }
 
         sleep(Duration::new(10, 0)).await;
@@ -256,9 +297,9 @@ impl Scheduler {
         let pending_chunks: HashMap<String, Value> = all
             .iter()
             .filter_map(|(chunk_id, value)| {
-                if value.get("status").and_then(Value::as_str) == Some("Pending")
-                    || value.get("status").and_then(Value::as_str) == Some("Failed")
-                        && value.get("full_doc_id").and_then(Value::as_str) == Some(doc_id)
+                if (value.get("status").and_then(Value::as_str) == Some("Pending")
+                    || value.get("status").and_then(Value::as_str) == Some("Failed"))
+                    && value.get("full_doc_id").and_then(Value::as_str) == Some(doc_id)
                 {
                     Some((chunk_id.clone(), value.clone()))
                 } else {
@@ -360,7 +401,7 @@ impl Worker {
                         guard.recv().await
                     };
                     match maybe_job_dispatch {
-                        Some(job_dispatch) => {
+                        Some(mut job_dispatch) => {
                             debug!("Processing Chunk {}", job_dispatch.chunk.chunk_id);
 
                             // let job = {
@@ -442,27 +483,52 @@ impl Worker {
                                         .get_by_id(&job_dispatch.chunk.chunk_id)
                                         .await
                                     {
-                                        chunk_record["status"] = Value::String("Failed".into());
-                                        chunk_record["error"] = Value::String(err.to_string());
-                                        let mut update = HashMap::new();
-                                        update.insert(
-                                            job_dispatch.chunk.chunk_id.clone(),
-                                            chunk_record,
-                                        );
-                                        if let Err(store_err) =
-                                            pipeline.storages.text_chunks.upsert(update).await
+                                        if job_dispatch.chunk.current_retry
+                                            > job_dispatch.chunk.max_retries
                                         {
-                                            error!(error=%store_err, "failed to persist chunk failure");
-                                        } else if let Err(sync_err) =
-                                            pipeline.storages.text_chunks.sync_if_dirty().await
-                                        {
-                                            error!(error=%sync_err, "failed to flush chunk failure");
+                                            chunk_record["status"] = Value::String("Failed".into());
+                                            chunk_record["error"] = Value::String(err.to_string());
+                                            let mut update = HashMap::new();
+                                            update.insert(
+                                                job_dispatch.chunk.chunk_id.clone(),
+                                                chunk_record,
+                                            );
+                                            if let Err(store_err) =
+                                                pipeline.storages.text_chunks.upsert(update).await
+                                            {
+                                                error!(error=%store_err, "failed to persist chunk failure");
+                                            } else if let Err(sync_err) =
+                                                pipeline.storages.text_chunks.sync_if_dirty().await
+                                            {
+                                                error!(error=%sync_err, "failed to flush chunk failure");
+                                            }
+                                            {
+                                                let mut guard = scheduler.queue.lock().await;
+                                                if let Some(job) =
+                                                    guard.jobs_map.get_mut(&job_dispatch.job_id)
+                                                {
+                                                    if let Some(chunk) =
+                                                        job.chunks.iter_mut().find(|chunk| {
+                                                            &chunk.chunk_id
+                                                                == &job_dispatch.chunk.chunk_id
+                                                        })
+                                                    {
+                                                        chunk.chunk_status = ChunkStatus::Failed;
+                                                        chunk.error = Some(err.to_string());
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            job_dispatch.chunk.current_retry += 1;
+                                            if let StdErr(err) = scheduler
+                                                .dispatcher
+                                                .work_tx
+                                                .send(job_dispatch)
+                                                .await
+                                            {
+                                                error!(error=%err, "Error occurred while sending failed chunk for retry");
+                                            };
                                         }
-                                        if let StdErr(err) =
-                                            scheduler.dispatcher.work_tx.send(job_dispatch).await
-                                        {
-                                            error!(error=%err, "Error occurred while sending failed chunk for retry");
-                                        };
                                     }
                                 }
                             }
@@ -545,8 +611,16 @@ impl Queue {
         debug!("Requeing {}", job.job_id);
         job.next_run_at = Instant::now(); // update next_run_at
         if job.current_retry > job.max_retries {
+            job.job_status = JobStatus::Failed;
             return Err(anyhow!("Max retries reachd"));
         }
+
+        if let Some(index) = self.jobs.iter().position(|e| e == &job.job_id) {
+            if let Some(job_id) = self.jobs.remove(index) {
+                self.jobs_map.remove(&job_id);
+            }
+        }
+
         self.enqueue(job.job_id.to_owned(), job)
     }
 

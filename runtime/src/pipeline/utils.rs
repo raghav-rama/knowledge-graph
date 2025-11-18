@@ -181,7 +181,7 @@ pub fn chunk_to_chunk_state(chunks: Vec<Chunk>, doc_id: String) -> Vec<ChunkStat
             content: chunk.content.clone(),
             error: None,
             output: None,
-            max_retries: 10,
+            max_retries: 20,
             current_retry: 0,
             created_at: Utc::now(),
             oai_resp_id: None,
