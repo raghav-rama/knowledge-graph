@@ -69,7 +69,9 @@ async fn main() {
 
 async fn run() -> Result<()> {
     init_tracing();
-    dotenv().with_context(|| "Problem loading .env file")?;
+    if let Err(err) = dotenv() {
+        warn!(error = %err, "Could not load .env file; relying on existing environment variables");
+    }
     let api_key = env::var("OPENAI_API_KEY").context("openai aapi key not set")?;
 
     let (work_tx, work_rx) = mpsc::channel::<JobDispatch>(100);

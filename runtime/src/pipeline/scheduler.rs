@@ -75,7 +75,18 @@ impl Scheduler {
                 maybe_result = guard.recv() => {
                     if let Some(job_result) = maybe_result {
                         debug!("Chunk processed {}", job_result.chunk_id);
-                        let er = job_result.entity_relationships;
+                        {
+                            let mut guard = self.queue.lock().await;
+                            if let Some(job) = guard.jobs_map.get_mut(&job_result.job_id) {
+                                if let Some(chunk) = job.chunks.iter_mut().find(|chunk| {
+                                    &chunk.chunk_id == &job_result.chunk_id
+                                }) {
+                                    chunk.chunk_status = ChunkStatus::Success;
+                                    chunk.output = Some(job_result.entity_relationships);
+                                }
+                            }
+                        };
+
                     }
                 }
             };
@@ -541,7 +552,7 @@ pub struct ChunkState {
     pub chunk_status: ChunkStatus,
     pub content: String,
     pub error: Option<String>,
-    pub output: Option<String>,
+    pub output: Option<EntitiesRelationships>,
     pub max_retries: u8,
     pub current_retry: u8,
     pub created_at: DateTime<Utc>,

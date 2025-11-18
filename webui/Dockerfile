@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG NODE_VERSION=20.19.2
-ARG PUBLIC_API_BASE_URL=https://enhanced-kg.railway.internal
+ARG PUBLIC_API_BASE_URL=http://enhanced-kg
 
 FROM node:${NODE_VERSION}-bullseye-slim AS builder
 ARG PUBLIC_API_BASE_URL
