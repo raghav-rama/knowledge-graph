@@ -10,7 +10,7 @@ ENV NODE_ENV=production \
     CI=true
 WORKDIR /app/webui
 
-COPY webui/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY ./pnpm-lock.yaml ./pnpm-lock.yaml
 COPY webui/package.json ./package.json
 
 RUN corepack enable && pnpm install --frozen-lockfile
