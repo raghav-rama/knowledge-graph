@@ -458,6 +458,11 @@ impl Worker {
                                         {
                                             error!(error=%sync_err, "failed to flush chunk failure");
                                         }
+                                        if let StdErr(err) =
+                                            scheduler.dispatcher.work_tx.send(job_dispatch).await
+                                        {
+                                            error!(error=%err, "Error occurred while sending failed chunk for retry");
+                                        };
                                     }
                                 }
                             }
