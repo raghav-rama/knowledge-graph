@@ -8,20 +8,15 @@ ARG PUBLIC_API_BASE_URL
 ENV NODE_ENV=production \
     PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL} \
     CI=true
-WORKDIR /app
+WORKDIR /app/webui
 
-# Copy workspace metadata first for better caching
-COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY webui/package.json ./webui/package.json
+COPY webui/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY webui/package.json ./package.json
 
-RUN corepack enable \
-    && pnpm install --filter webui --frozen-lockfile --ignore-scripts
+RUN corepack enable && pnpm install --frozen-lockfile
 
-COPY webui ./webui
-
-RUN pnpm --filter webui run prepare \
-    && pnpm --filter webui build \
-    && pnpm install --filter webui --prod --frozen-lockfile --ignore-scripts
+COPY webui/ .
+RUN pnpm run build
 
 FROM node:${NODE_VERSION}-bullseye-slim AS runner
 ARG PUBLIC_API_BASE_URL
@@ -30,7 +25,7 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000
 WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/webui/node_modules ./node_modules
 COPY --from=builder /app/webui/build ./build
 COPY --from=builder /app/webui/package.json ./package.json
 EXPOSE 3000

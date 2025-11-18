@@ -52,10 +52,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/target/release/runtime /usr/local/bin/runtime
 COPY runtime/config ./config
 RUN sed -i 's/host:[[:space:]]*127\.0\.0\.1/host: 0.0.0.0/' ./config/app.yaml \
-    && mkdir -p ./pgv-data-test
+    && mkdir -p ./pgv-data
 
 ENV APP_CONFIG_PATH=/opt/runtime/config/app.yaml \
-    RUST_LOG=info \
+    RUST_LOG=debug \
     CUDA_COMPUTE_CAP=${CUDA_COMPUTE_CAP}
 
 EXPOSE 42069
