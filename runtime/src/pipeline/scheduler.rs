@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::{Ok, Result, anyhow};
 use chrono::{DateTime, Utc};
-use serde_json::{self as serde_json, Value};
+use serde_json::{self as serde_json, Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     result::Result::{Err as StdErr, Ok as StdOk},
@@ -73,21 +73,7 @@ impl Scheduler {
             tokio::select! {
                 _ = self.schedule_tick() => {},
                 maybe_result = guard.recv() => {
-                    if let Some(job_result) = maybe_result {
-                        debug!("Chunk processed {}", job_result.chunk_id);
-                        {
-                            let mut guard = self.queue.lock().await;
-                            if let Some(job) = guard.jobs_map.get_mut(&job_result.job_id) {
-                                if let Some(chunk) = job.chunks.iter_mut().find(|chunk| {
-                                    &chunk.chunk_id == &job_result.chunk_id
-                                }) {
-                                    chunk.chunk_status = ChunkStatus::Success;
-                                    chunk.output = Some(job_result.entity_relationships);
-                                }
-                            }
-                        };
-
-                    }
+                    self.process_chunk_result(maybe_result).await?
                 }
             };
             // let now = Instant::now();
@@ -121,13 +107,102 @@ impl Scheduler {
             // sleep(Duration::new(10, 0)).await;
         }
     }
+
+    async fn process_chunk_result(&self, maybe_result: Option<JobResult>) -> Result<()> {
+        if let Some(job_result) = maybe_result {
+            debug!("Chunk processed {}", job_result.chunk_id);
+            let er = job_result.entity_relationships.clone();
+            {
+                let mut guard = self.queue.lock().await;
+                if let Some(job) = guard.jobs_map.get_mut(&job_result.job_id) {
+                    if let Some(chunk) = job
+                        .chunks
+                        .iter_mut()
+                        .find(|chunk| &chunk.chunk_id == &job_result.chunk_id)
+                    {
+                        chunk.chunk_status = ChunkStatus::Success;
+                        chunk.output = Some(job_result.entity_relationships);
+                    }
+                }
+            };
+            let entities = er.entities;
+            let relationships = er.relationships;
+            let mut entities_to_upsert: HashMap<String, Value> = HashMap::new();
+            let mut relationships_to_upsert: HashMap<String, Value> = HashMap::new();
+            let mut entity_name_to_entity_id_mapping: HashMap<String, String> = HashMap::new();
+            for entity in entities {
+                let entity_id = compute_mdhash_id(
+                    &format!(
+                        "{}:{}:{}",
+                        &job_result.doc_id,
+                        &entity.entity_name,
+                        &entity.entity_type.as_str()
+                    ),
+                    "entity-",
+                );
+
+                entities_to_upsert.insert(
+                    entity_id.clone(),
+                    json!({
+                        "entity_name": entity.entity_name,
+                        "entity_type": entity.entity_type,
+                        "entity_description": entity.entity_description,
+                        "doc_id": job_result.doc_id,
+                        "chunk_id": job_result.chunk_id,
+                        "chunk_order_index": job_result.chunk_order_index
+                    }),
+                );
+                entity_name_to_entity_id_mapping.insert(entity.entity_name, entity_id);
+            }
+
+            for relationship in relationships {
+                let relation_id = compute_mdhash_id(
+                    &format!(
+                        "{}:{}:{}",
+                        &job_result.doc_id,
+                        &relationship.source_entity,
+                        &relationship.target_entity
+                    ),
+                    "rel-",
+                );
+
+                relationships_to_upsert.insert(relation_id, json!({
+                    "source_entity_id": entity_name_to_entity_id_mapping.get(&relationship.source_entity),
+                    "target_entity_id": entity_name_to_entity_id_mapping.get(&relationship.target_entity),
+                    "keywords": relationship.relationship_keywords,
+                    "description": relationship.relationship_description,
+                    "doc_id": job_result.doc_id,
+                    "chunk_id": job_result.chunk_id,
+                }));
+            }
+
+            if !entities_to_upsert.is_empty() {
+                self.pipeline
+                    .storages
+                    .full_entities
+                    .upsert(entities_to_upsert)
+                    .await?;
+            }
+
+            if !relationships_to_upsert.is_empty() {
+                self.pipeline
+                    .storages
+                    .full_relations
+                    .upsert(relationships_to_upsert)
+                    .await?;
+            }
+
+            self.pipeline.persist_all().await?;
+        }
+        Ok(())
+    }
     async fn schedule_tick(&self) -> Result<()> {
         let now = Instant::now();
         let job = {
             let mut guard = self.queue.lock().await;
             if let Some(job) = guard.peek() {
                 let chunks = self.get_pending_chunks_for_doc(&job.doc_id).await?;
-                let chunks_state = chunk_to_chunk_state(chunks);
+                let chunks_state = chunk_to_chunk_state(chunks, job.doc_id.clone());
                 job.chunks = chunks_state;
             }
             guard.peek().cloned()
@@ -139,7 +214,7 @@ impl Scheduler {
                 .iter()
                 .map(|chunk| chunk.id.clone())
                 .collect::<Vec<String>>();
-            let chunks_state = chunk_to_chunk_state(chunks);
+            let chunks_state = chunk_to_chunk_state(chunks, job.doc_id.clone());
             debug!("Made {} chunk(s)", chunks_state.len());
             {
                 let mut guard = self.queue.lock().await;
@@ -347,6 +422,8 @@ impl Worker {
                                             entity_relationships,
                                             chunk_id: job_dispatch.chunk.chunk_id,
                                             job_id: job_dispatch.job_id,
+                                            doc_id: job_dispatch.chunk.doc_id,
+                                            chunk_order_index: job_dispatch.chunk.chunk_order_index,
                                         })
                                         .await
                                     {
@@ -414,6 +491,8 @@ pub struct JobResult {
     entity_relationships: EntitiesRelationships,
     chunk_id: String,
     job_id: String,
+    doc_id: String,
+    chunk_order_index: usize,
 }
 
 pub struct Queue {
@@ -549,7 +628,9 @@ impl Job {
 #[derive(Clone)]
 pub struct ChunkState {
     pub chunk_id: String,
+    pub doc_id: String,
     pub chunk_status: ChunkStatus,
+    pub chunk_order_index: usize,
     pub content: String,
     pub error: Option<String>,
     pub output: Option<EntitiesRelationships>,

@@ -170,12 +170,14 @@ pub async fn get_all_relationships(s: &JsonKvStorage) -> Result<HashMap<String, 
     Ok(relations)
 }
 
-pub fn chunk_to_chunk_state(chunks: Vec<Chunk>) -> Vec<ChunkState> {
+pub fn chunk_to_chunk_state(chunks: Vec<Chunk>, doc_id: String) -> Vec<ChunkState> {
     chunks
         .iter()
         .map(|chunk| ChunkState {
             chunk_id: chunk.id.clone(),
+            doc_id: doc_id.clone(),
             chunk_status: ChunkStatus::Pending,
+            chunk_order_index: chunk.order,
             content: chunk.content.clone(),
             error: None,
             output: None,

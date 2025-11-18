@@ -513,7 +513,7 @@ impl Pipeline {
         Ok(())
     }
 
-    async fn persist_all(&self) -> StorageResult<()> {
+    pub async fn persist_all(&self) -> StorageResult<()> {
         self.storages.full_docs.sync_if_dirty().await?;
         self.storages.text_chunks.sync_if_dirty().await?;
         self.storages.full_entities.sync_if_dirty().await?;
