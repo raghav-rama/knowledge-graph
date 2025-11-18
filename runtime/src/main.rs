@@ -16,6 +16,7 @@ use tokio::{
         mpsc::{self as mpsc, Receiver, Sender},
     },
 };
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -192,12 +193,18 @@ async fn run() -> Result<()> {
         .with_context(|| format!("Invalid server address: {addr_string}"))?;
     info!(host = %config.server.host, port = config.server.port, "Loaded configuration");
 
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let app = Router::new()
         .route("/", get(handler))
         .route("/health", get(health))
         .merge(routes::document_routes())
         .merge(routes::graph_routes())
-        .with_state(state);
+        .with_state(state)
+        .layer(cors);
 
     let listener = TcpListener::bind(addr)
         .await

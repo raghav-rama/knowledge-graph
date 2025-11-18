@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG NODE_VERSION=20.19.2
-ARG PUBLIC_API_BASE_URL=http://enhanced-kg
+ARG PUBLIC_API_BASE_URL=http://enhanced-kg:42069
 
 FROM node:${NODE_VERSION}-bullseye-slim AS builder
 ARG PUBLIC_API_BASE_URL
@@ -30,7 +30,7 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000
 WORKDIR /app
-COPY --from=builder /app/webui/node_modules ./node_modules
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/webui/build ./build
 COPY --from=builder /app/webui/package.json ./package.json
 EXPOSE 3000

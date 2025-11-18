@@ -23,7 +23,8 @@ async fn main() -> Result<()> {
         .responses_structured(
             &model_str,
             &system_prompt,
-            &user_prompt,None,
+            &user_prompt,
+            None,
             "entities",
             entities,
             true,
