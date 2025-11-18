@@ -2,10 +2,12 @@
 
 ARG RUST_VERSION=1.89.0
 ARG CUDA_VERSION=12.6.2
+ARG CUDA_COMPUTE_CAP=80
 ARG UBUNTU_VERSION=22.04
 
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS builder
 ARG RUST_VERSION
+ARG CUDA_COMPUTE_CAP
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,7 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
 ENV PATH="/root/.cargo/bin:${PATH}" \
-    CARGO_NET_GIT_FETCH_WITH_CLI=true
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    CUDA_COMPUTE_CAP=${CUDA_COMPUTE_CAP}
 
 COPY Cargo.toml Cargo.lock ./
 COPY runtime/Cargo.toml runtime/
@@ -35,6 +38,7 @@ COPY runtime/ runtime/
 RUN cargo build --locked --release
 
 FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
+ARG CUDA_COMPUTE_CAP
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -51,7 +55,8 @@ RUN sed -i 's/host:[[:space:]]*127\.0\.0\.1/host: 0.0.0.0/' ./config/app.yaml \
     && mkdir -p ./pgv-data-test
 
 ENV APP_CONFIG_PATH=/opt/runtime/config/app.yaml \
-    RUST_LOG=info
+    RUST_LOG=info \
+    CUDA_COMPUTE_CAP=${CUDA_COMPUTE_CAP}
 
 EXPOSE 42069
 
