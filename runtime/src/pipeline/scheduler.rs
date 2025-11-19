@@ -206,15 +206,25 @@ impl Scheduler {
                     ),
                     "rel-",
                 );
-
-                relationships_to_upsert.insert(relation_id, json!({
-                    "source_entity_id": entity_name_to_entity_id_mapping.get(&relationship.source_entity),
-                    "target_entity_id": entity_name_to_entity_id_mapping.get(&relationship.target_entity),
-                    "relationship_keywords": relationship.relationship_keywords,
-                    "relationship_description": relationship.relationship_description,
-                    "doc_id": job_result.doc_id,
-                    "chunk_id": job_result.chunk_id,
-                }));
+                let maybe_source_entity_id =
+                    entity_name_to_entity_id_mapping.get(&relationship.source_entity);
+                let maybe_target_entity_id =
+                    entity_name_to_entity_id_mapping.get(&relationship.target_entity);
+                if let (Some(source_entity_id), Some(target_entity_id)) =
+                    (maybe_source_entity_id, maybe_target_entity_id)
+                {
+                    relationships_to_upsert.insert(
+                        relation_id,
+                        json!({
+                            "source_entity_id": source_entity_id,
+                            "target_entity_id": target_entity_id,
+                            "relationship_keywords": relationship.relationship_keywords,
+                            "relationship_description": relationship.relationship_description,
+                            "doc_id": job_result.doc_id,
+                            "chunk_id": job_result.chunk_id,
+                        }),
+                    );
+                }
             }
 
             if !entities_to_upsert.is_empty() {
