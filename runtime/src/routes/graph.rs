@@ -269,15 +269,11 @@ fn find_edge(
 }
 
 fn is_symptom(entity: &EntityNode) -> bool {
-    entity
-        .entity_type
-        .eq_ignore_ascii_case("Symptom / Phenotype")
+    entity.entity_type.eq_ignore_ascii_case("Symptom")
 }
 
 fn is_disease(entity: &EntityNode) -> bool {
-    entity
-        .entity_type
-        .eq_ignore_ascii_case("Disease / Disorder")
+    entity.entity_type.eq_ignore_ascii_case("Disease")
 }
 
 fn matches_query(name: &str, query: &str) -> bool {
