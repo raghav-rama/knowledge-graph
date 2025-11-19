@@ -22,7 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
     libprotobuf-dev \
     libclang-dev \
-    jq \
     && rm -rf /var/lib/apt/lists/*
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
 ENV PATH="/root/.cargo/bin:${PATH}" \
@@ -48,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libclang1 \
     tzdata \
     tini \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/runtime /usr/local/bin/runtime
