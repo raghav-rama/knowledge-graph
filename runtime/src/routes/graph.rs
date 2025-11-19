@@ -117,9 +117,13 @@ async fn graph_search(
     let all_relationships = get_all_relationships(state.storages.full_relations.as_ref())
         .await
         .map_err(|err| {
+            let mut full_error = String::default();
+            for (depth, err) in err.chain().enumerate() {
+                full_error += &err.to_string();
+            }
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("error getting relationships {err}"),
+                format!("error getting relationships {full_error}"),
             )
         })?;
 
