@@ -18,11 +18,11 @@ use std::{
 use tokio::{
     sync::{
         Mutex,
-        mpsc::{Receiver, Sender},
+        mpsc::{UnboundedReceiver, UnboundedSender},
     },
     time::{Instant, sleep},
 };
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::AppState;
 
@@ -31,7 +31,7 @@ pub struct Scheduler {
     pub queue: Arc<Mutex<Queue>>,
     dispatcher: Dispatcher,
     // workers: Worker,
-    result_rx: Arc<Mutex<Receiver<JobResult>>>,
+    result_rx: Arc<Mutex<UnboundedReceiver<JobResult>>>,
     pipeline: Arc<Pipeline>,
     storage: Arc<AppStorages>,
 }
@@ -40,12 +40,12 @@ impl Scheduler {
     pub fn new(
         max_inflight: u8,
         capacity: u32,
-        work_tx: Sender<JobDispatch>,
-        result_rx: Arc<Mutex<Receiver<JobResult>>>,
+        work_tx: UnboundedSender<JobDispatch>,
+        result_rx: Arc<Mutex<UnboundedReceiver<JobResult>>>,
         pipeline: Arc<Pipeline>,
         storage: Arc<AppStorages>,
-        work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
-        result_tx: Sender<JobResult>,
+        work_rx: Arc<Mutex<UnboundedReceiver<JobDispatch>>>,
+        result_tx: UnboundedSender<JobResult>,
     ) -> Self {
         let queue = Arc::new(Mutex::new(Queue::new(capacity)));
 
@@ -274,13 +274,10 @@ impl Scheduler {
                 }
             }
             for chunk in job.chunks.iter().cloned() {
-                self.dispatcher
-                    .work_tx
-                    .send(JobDispatch {
-                        job_id: job.job_id.clone(),
-                        chunk,
-                    })
-                    .await?;
+                self.dispatcher.work_tx.send(JobDispatch {
+                    job_id: job.job_id.clone(),
+                    chunk,
+                })?;
             }
 
             // if let Err(_) = self.dispatcher.work_tx.send(job).await {}
@@ -357,13 +354,13 @@ impl Scheduler {
 
 #[derive(Clone)]
 struct Dispatcher {
-    work_tx: Sender<JobDispatch>,
+    work_tx: UnboundedSender<JobDispatch>,
     max_inflight: u8,
     inflight: HashSet<String>,
 }
 
 impl Dispatcher {
-    pub fn new(work_tx: Sender<JobDispatch>, max_inflight: u8) -> Self {
+    pub fn new(work_tx: UnboundedSender<JobDispatch>, max_inflight: u8) -> Self {
         Dispatcher {
             work_tx,
             max_inflight,
@@ -373,20 +370,23 @@ impl Dispatcher {
 }
 
 struct Worker {
-    work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
-    result_tx: Sender<JobResult>,
+    work_rx: Arc<Mutex<UnboundedReceiver<JobDispatch>>>,
+    result_tx: UnboundedSender<JobResult>,
 }
 
 impl Worker {
-    pub fn new(work_rx: Arc<Mutex<Receiver<JobDispatch>>>, result_tx: Sender<JobResult>) -> Self {
+    pub fn new(
+        work_rx: Arc<Mutex<UnboundedReceiver<JobDispatch>>>,
+        result_tx: UnboundedSender<JobResult>,
+    ) -> Self {
         Worker { work_rx, result_tx }
     }
 
     pub fn spawn_pool(
         pipeline: Arc<Pipeline>,
         scheduler: Arc<Scheduler>,
-        work_rx: Arc<Mutex<Receiver<JobDispatch>>>,
-        result_tx: Sender<JobResult>,
+        work_rx: Arc<Mutex<UnboundedReceiver<JobDispatch>>>,
+        result_tx: UnboundedSender<JobResult>,
         size: usize,
     ) {
         for _ in 0..size {
@@ -458,16 +458,13 @@ impl Worker {
                                             error!(error=%sync_err, "failed to flush chunk failure");
                                         }
                                     }
-                                    if let StdErr(err) = result_tx
-                                        .send(JobResult {
-                                            entity_relationships,
-                                            chunk_id: job_dispatch.chunk.chunk_id,
-                                            job_id: job_dispatch.job_id,
-                                            doc_id: job_dispatch.chunk.doc_id,
-                                            chunk_order_index: job_dispatch.chunk.chunk_order_index,
-                                        })
-                                        .await
-                                    {
+                                    if let StdErr(err) = result_tx.send(JobResult {
+                                        entity_relationships,
+                                        chunk_id: job_dispatch.chunk.chunk_id,
+                                        job_id: job_dispatch.job_id,
+                                        doc_id: job_dispatch.chunk.doc_id,
+                                        chunk_order_index: job_dispatch.chunk.chunk_order_index,
+                                    }) {
                                         error!(err=%err, "Error");
                                     }
                                 }
@@ -520,11 +517,12 @@ impl Worker {
                                             }
                                         } else {
                                             job_dispatch.chunk.current_retry += 1;
-                                            if let StdErr(err) = scheduler
-                                                .dispatcher
-                                                .work_tx
-                                                .send(job_dispatch)
-                                                .await
+                                            debug!(
+                                                "Retrying chunk_id: {}",
+                                                job_dispatch.chunk.chunk_id
+                                            );
+                                            if let StdErr(err) =
+                                                scheduler.dispatcher.work_tx.send(job_dispatch)
                                             {
                                                 error!(error=%err, "Error occurred while sending failed chunk for retry");
                                             };

@@ -13,7 +13,7 @@ use tokio::{
     signal,
     sync::{
         Mutex,
-        mpsc::{self as mpsc, Receiver, Sender},
+        mpsc::{self as mpsc, UnboundedReceiver, UnboundedSender},
     },
 };
 use tower_http::cors::{Any, CorsLayer};
@@ -75,8 +75,8 @@ async fn run() -> Result<()> {
     }
     let api_key = env::var("OPENAI_API_KEY").context("openai aapi key not set")?;
 
-    let (work_tx, work_rx) = mpsc::channel::<JobDispatch>(100);
-    let (job_result_tx, job_result_rx) = mpsc::channel::<JobResult>(100);
+    let (work_tx, work_rx) = mpsc::unbounded_channel::<JobDispatch>();
+    let (job_result_tx, job_result_rx) = mpsc::unbounded_channel::<JobResult>();
     let work_rx = Arc::new(Mutex::new(work_rx));
     let job_result_rx = Arc::new(Mutex::new(job_result_rx));
 
