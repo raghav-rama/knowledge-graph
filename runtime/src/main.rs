@@ -203,6 +203,7 @@ async fn run() -> Result<()> {
         .route("/health", get(health))
         .merge(routes::document_routes())
         .merge(routes::graph_routes())
+        .merge(routes::download_routes())
         .with_state(state)
         .layer(cors);
 
