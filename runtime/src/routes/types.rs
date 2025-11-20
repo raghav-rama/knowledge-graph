@@ -63,6 +63,7 @@ pub struct GraphSearchResult {
 #[ts(export)]
 pub struct GraphSearchResponse {
     pub query: Option<String>,
-    pub results: Vec<GraphSearchResult>,
+    pub results: Option<Vec<GraphSearchResult>>,
     pub message: Option<String>,
+    pub paths: Option<Vec<Option<String>>>,
 }

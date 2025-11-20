@@ -48,7 +48,7 @@ struct Chunk {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let working_dir = PathBuf::from("/Users/ritz/develop/ai/enhanced-kg/runtime/pgv-data");
+    let working_dir = PathBuf::from("/Users/ritz/develop/ai/enhanced-kg/runtime/pgv-data-test");
     let full_entities = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
         working_dir: working_dir.clone(),
         namespace: "full_entities".into(),
@@ -113,15 +113,15 @@ async fn main() -> Result<()> {
         graph.edge_count()
     );
 
-    traverse_symptom_to_disease(&graph, Some("Cognitive impairment"), 6, 3, 50);
+    traverse_symptom_to_disease(&graph, Some("Progeria"), 60, 10, 50);
     Ok(())
 }
 
 fn is_symptom(n: &EntityNode) -> bool {
-    n.entity_type.eq_ignore_ascii_case("Symptom / Phenotype")
+    n.entity_type.eq_ignore_ascii_case("Symptom")
 }
 fn is_disease(n: &EntityNode) -> bool {
-    n.entity_type.eq_ignore_ascii_case("Disease / Disorder")
+    n.entity_type.eq_ignore_ascii_case("Disease")
 }
 fn matches_query(name: &str, q: &str) -> bool {
     name.to_ascii_lowercase().contains(&q.to_ascii_lowercase())

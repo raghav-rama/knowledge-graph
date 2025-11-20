@@ -1,8 +1,22 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
     sync::Arc,
 };
 
+use super::types::{
+    EntityResponse, GraphResponse, GraphSearchEdge, GraphSearchEntity, GraphSearchPath,
+    GraphSearchResponse, GraphSearchResult, RelationshipEdgeResponse,
+};
+use crate::{
+    AppState,
+    pipeline::{
+        types::{EntityNode, RelationEdge},
+        utils::{get_all_entities, get_all_relationships},
+    },
+    storage::{JsonKvStorage, JsonKvStorageConfig, KvStorage},
+};
+use anyhow::Result;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -20,20 +34,8 @@ use x402_rs::network::{Network, USDCDeployment};
 use x402_rs::telemetry::Telemetry;
 use x402_rs::types::{EvmAddress, MixedAddress};
 
-use super::types::{
-    EntityResponse, GraphResponse, GraphSearchEdge, GraphSearchEntity, GraphSearchPath,
-    GraphSearchResponse, GraphSearchResult, RelationshipEdgeResponse,
-};
-use crate::{
-    AppState,
-    pipeline::{
-        types::{EntityNode, RelationEdge},
-        utils::{get_all_entities, get_all_relationships},
-    },
-};
-
 const DEFAULT_MAX_DEPTH: usize = 6;
-const DEFAULT_MAX_PATHS: usize = 3;
+const DEFAULT_MAX_PATHS: usize = 5;
 const DEFAULT_MAX_SYMPTOMS: usize = 50;
 
 pub fn graph_routes() -> Router<Arc<AppState>> {
@@ -100,6 +102,7 @@ struct GraphSearchQuery {
     max_depth: Option<usize>,
     max_paths: Option<usize>,
     max_symptoms: Option<usize>,
+    llm_friendly: Option<bool>,
 }
 
 async fn graph_search(
@@ -162,21 +165,67 @@ async fn graph_search(
     let max_depth = params.max_depth.unwrap_or(DEFAULT_MAX_DEPTH);
     let max_paths = params.max_paths.unwrap_or(DEFAULT_MAX_PATHS);
     let max_symptoms = params.max_symptoms.unwrap_or(DEFAULT_MAX_SYMPTOMS);
+    let llm_friendly = params.llm_friendly.unwrap_or(false);
 
-    let results = traverse_symptom_to_disease(
-        &graph,
-        &node_ids,
-        query.as_deref(),
-        max_depth,
-        max_paths,
-        max_symptoms,
-    );
+    if !llm_friendly {
+        let results = traverse_symptom_to_disease(
+            &graph,
+            &node_ids,
+            query.as_deref(),
+            max_depth,
+            max_paths,
+            max_symptoms,
+        );
+        Ok(Json(GraphSearchResponse {
+            query,
+            results: Some(results),
+            message: None,
+            paths: None,
+        }))
+    } else {
+        let paths = traverse_symptom_to_disease_llm_friendly(
+            &graph,
+            &node_ids,
+            query.as_deref(),
+            max_depth,
+            max_paths,
+            max_symptoms,
+        );
+        Ok(Json(GraphSearchResponse {
+            query,
+            results: None,
+            message: None,
+            paths: Some(paths),
+        }))
+    }
+}
 
-    Ok(Json(GraphSearchResponse {
-        query,
-        results,
-        message: None,
-    }))
+fn traverse_symptom_to_disease_llm_friendly(
+    graph: &StableDiGraph<EntityNode, RelationEdge>,
+    node_ids: &HashMap<NodeIndex, String>,
+    symptom_query: Option<&str>,
+    max_depth: usize,
+    max_paths_per_symptom: usize,
+    max_symptoms: usize,
+) -> Vec<Option<String>> {
+    let start_nodes = find_symptom_nodes(graph, symptom_query);
+    start_nodes
+        .into_iter()
+        .take(max_symptoms)
+        .map(|start_idx| {
+            bfs_symptom_to_diseases(
+                graph,
+                start_idx,
+                max_depth,
+                max_paths_per_symptom,
+                WalkDir::Both,
+            )
+            .into_iter()
+            .map(|path| build_path_as_str(graph, node_ids, path))
+            .collect()
+        })
+        .filter(|result: &Option<String>| result.is_some())
+        .collect()
 }
 
 fn traverse_symptom_to_disease(
@@ -210,6 +259,86 @@ fn traverse_symptom_to_disease(
         })
         .filter(|result| !result.paths.is_empty())
         .collect()
+}
+
+fn build_path_as_str(
+    graph: &StableDiGraph<EntityNode, RelationEdge>,
+    node_ids: &HashMap<NodeIndex, String>,
+    path: Vec<NodeIndex>,
+) -> Option<String> {
+    let mut path_strs = Vec::new();
+    for window in path.windows(2) {
+        println!("{:?}", path_strs);
+        let a = window[0];
+        let b = window[1];
+        if let Some((relation, is_forward)) = find_edge(graph, a, b) {
+            let node_a = &graph[a];
+            let node_b = &graph[b];
+            path_strs.push(String::from(format!(
+                "{} ---  {}  ---> {}",
+                node_a.entity_name, relation.relationship_description, node_b.entity_name
+            )));
+        };
+    }
+    let sre = path_strs
+        .into_iter()
+        .reduce(|k, v| format!("{}-----{}", k.clone(), v.clone()));
+    sre
+}
+
+#[tokio::test]
+async fn test_build_path_as_str() -> Result<()> {
+    let working_dir =
+        PathBuf::from("/Users/ritz/develop/ai/enhanced-kg/runtime/pgv-data-test".to_string());
+    let full_entities = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+        working_dir: working_dir.clone(),
+        namespace: "full_entities".into(),
+        workspace: None,
+    }));
+
+    let full_relations = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
+        working_dir: working_dir.clone(),
+        namespace: "full_relations".into(),
+        workspace: None,
+    }));
+    full_entities.initialize().await?;
+    full_relations.initialize().await?;
+    let all_entities = get_all_entities(full_entities.as_ref()).await?;
+    let all_relationships = get_all_relationships(full_relations.as_ref()).await?;
+    let mut graph = StableDiGraph::<EntityNode, RelationEdge>::with_capacity(
+        all_entities.len(),
+        all_relationships.len(),
+    );
+    let mut entity_indices: HashMap<String, NodeIndex> = HashMap::new();
+    let mut node_ids: HashMap<NodeIndex, String> = HashMap::new();
+
+    for (entity_id, entity_node) in all_entities.iter() {
+        let node_index = graph.add_node(entity_node.clone());
+        entity_indices.insert(entity_id.clone(), node_index);
+        node_ids.insert(node_index, entity_id.clone());
+    }
+
+    for relation_edge in all_relationships.values() {
+        let Some(&source_idx) = entity_indices.get(&relation_edge.source_entity_id) else {
+            continue;
+        };
+        let Some(&target_idx) = entity_indices.get(&relation_edge.target_entity_id) else {
+            continue;
+        };
+        graph.add_edge(source_idx, target_idx, relation_edge.clone());
+    }
+
+    let max_depth = DEFAULT_MAX_DEPTH;
+    let max_paths = DEFAULT_MAX_PATHS;
+    let max_symptoms = DEFAULT_MAX_SYMPTOMS;
+
+    let start_nodes = find_symptom_nodes(&graph, Some("Progeria"));
+
+    let paths =
+        bfs_symptom_to_diseases(&graph, start_nodes[0], max_depth, max_paths, WalkDir::Both);
+
+    build_path_as_str(&graph, &node_ids, paths[1].clone());
+    Ok(())
 }
 
 fn build_path(
