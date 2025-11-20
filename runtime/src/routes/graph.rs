@@ -207,12 +207,13 @@ fn traverse_symptom_to_disease_llm_friendly(
     max_depth: usize,
     max_paths_per_symptom: usize,
     max_symptoms: usize,
-) -> Vec<Option<String>> {
+) -> Vec<String> {
     let start_nodes = find_symptom_nodes(graph, symptom_query);
+
     start_nodes
         .into_iter()
         .take(max_symptoms)
-        .map(|start_idx| {
+        .flat_map(|start_idx| {
             bfs_symptom_to_diseases(
                 graph,
                 start_idx,
@@ -221,11 +222,9 @@ fn traverse_symptom_to_disease_llm_friendly(
                 WalkDir::Both,
             )
             .into_iter()
-            .map(|path| build_path_as_str(graph, node_ids, path))
-            .collect()
+            .filter_map(|path| build_path_as_str(graph, node_ids, path))
         })
-        .filter(|result: &Option<String>| result.is_some())
-        .collect()
+        .collect::<Vec<String>>()
 }
 
 fn traverse_symptom_to_disease(
@@ -268,7 +267,6 @@ fn build_path_as_str(
 ) -> Option<String> {
     let mut path_strs = Vec::new();
     for window in path.windows(2) {
-        println!("{:?}", path_strs);
         let a = window[0];
         let b = window[1];
         if let Some((relation, is_forward)) = find_edge(graph, a, b) {
@@ -283,6 +281,7 @@ fn build_path_as_str(
     let sre = path_strs
         .into_iter()
         .reduce(|k, v| format!("{}-----{}", k.clone(), v.clone()));
+    println!("SRE: {:?}", sre);
     sre
 }
 

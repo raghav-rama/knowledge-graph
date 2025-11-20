@@ -65,5 +65,5 @@ pub struct GraphSearchResponse {
     pub query: Option<String>,
     pub results: Option<Vec<GraphSearchResult>>,
     pub message: Option<String>,
-    pub paths: Option<Vec<Option<String>>>,
+    pub paths: Option<Vec<String>>,
 }
