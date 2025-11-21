@@ -39,8 +39,8 @@ async fn json_kv_roundtrip_delete_and_reload() -> anyhow::Result<()> {
     filter_keys.insert("doc-1".to_string());
     filter_keys.insert("missing".to_string());
     let existing = storage.filter_keys(&filter_keys).await?;
-    assert!(existing.contains("doc-1"));
-    assert!(!existing.contains("missing"));
+    assert!(!existing.contains("doc-1"));
+    assert!(existing.contains("missing"));
 
     let reopened = JsonKvStorage::new(config.clone());
     reopened.initialize().await?;

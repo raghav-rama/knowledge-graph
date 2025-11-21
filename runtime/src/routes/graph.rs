@@ -120,38 +120,18 @@ async fn graph_search(
     let all_relationships = get_all_relationships(state.storages.full_relations.as_ref())
         .await
         .map_err(|err| {
-            let mut full_error = String::default();
-            for (depth, err) in err.chain().enumerate() {
-                full_error += &err.to_string();
-            }
+            let full_error = err
+                .chain()
+                .map(|cause| cause.to_string())
+                .collect::<Vec<_>>()
+                .join(": ");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("error getting relationships {full_error}"),
             )
         })?;
 
-    let mut graph = StableDiGraph::<EntityNode, RelationEdge>::with_capacity(
-        all_entities.len(),
-        all_relationships.len(),
-    );
-    let mut entity_indices: HashMap<String, NodeIndex> = HashMap::new();
-    let mut node_ids: HashMap<NodeIndex, String> = HashMap::new();
-
-    for (entity_id, entity_node) in all_entities.iter() {
-        let node_index = graph.add_node(entity_node.clone());
-        entity_indices.insert(entity_id.clone(), node_index);
-        node_ids.insert(node_index, entity_id.clone());
-    }
-
-    for relation_edge in all_relationships.values() {
-        let Some(&source_idx) = entity_indices.get(&relation_edge.source_entity_id) else {
-            continue;
-        };
-        let Some(&target_idx) = entity_indices.get(&relation_edge.target_entity_id) else {
-            continue;
-        };
-        graph.add_edge(source_idx, target_idx, relation_edge.clone());
-    }
+    let (graph, node_ids) = build_graph(&all_entities, &all_relationships);
 
     let query = params.q.as_ref().and_then(|q| {
         let trimmed = q.trim();
@@ -198,6 +178,39 @@ async fn graph_search(
             paths: Some(paths),
         }))
     }
+}
+
+fn build_graph(
+    all_entities: &HashMap<String, EntityNode>,
+    all_relationships: &HashMap<String, RelationEdge>,
+) -> (
+    StableDiGraph<EntityNode, RelationEdge>,
+    HashMap<NodeIndex, String>,
+) {
+    let mut graph = StableDiGraph::<EntityNode, RelationEdge>::with_capacity(
+        all_entities.len(),
+        all_relationships.len(),
+    );
+    let mut entity_indices: HashMap<String, NodeIndex> = HashMap::new();
+    let mut node_ids: HashMap<NodeIndex, String> = HashMap::new();
+
+    for (entity_id, entity_node) in all_entities.iter() {
+        let node_index = graph.add_node(entity_node.clone());
+        entity_indices.insert(entity_id.clone(), node_index);
+        node_ids.insert(node_index, entity_id.clone());
+    }
+
+    for relation_edge in all_relationships.values() {
+        let Some(&source_idx) = entity_indices.get(&relation_edge.source_entity_id) else {
+            continue;
+        };
+        let Some(&target_idx) = entity_indices.get(&relation_edge.target_entity_id) else {
+            continue;
+        };
+        graph.add_edge(source_idx, target_idx, relation_edge.clone());
+    }
+
+    (graph, node_ids)
 }
 
 fn traverse_symptom_to_disease_llm_friendly(
@@ -269,26 +282,24 @@ fn build_path_as_str(
     for window in path.windows(2) {
         let a = window[0];
         let b = window[1];
-        if let Some((relation, is_forward)) = find_edge(graph, a, b) {
+        if let Some((relation, _is_forward)) = find_edge(graph, a, b) {
             let node_a = &graph[a];
             let node_b = &graph[b];
-            path_strs.push(String::from(format!(
+            path_strs.push(format!(
                 "{} ---  {}  ---> {}",
                 node_a.entity_name, relation.relationship_description, node_b.entity_name
-            )));
+            ));
         };
     }
-    let sre = path_strs
-        .into_iter()
-        .reduce(|k, v| format!("{}-----{}", k.clone(), v.clone()));
-    println!("SRE: {:?}", sre);
-    sre
+    if path_strs.is_empty() {
+        return None;
+    }
+    Some(path_strs.join("-----"))
 }
 
 #[tokio::test]
 async fn test_build_path_as_str() -> Result<()> {
-    let working_dir =
-        PathBuf::from("/Users/ritz/develop/ai/enhanced-kg/runtime/pgv-data-test".to_string());
+    let working_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pgv-data-test");
     let full_entities = Arc::new(JsonKvStorage::new(JsonKvStorageConfig {
         working_dir: working_dir.clone(),
         namespace: "full_entities".into(),
@@ -304,28 +315,7 @@ async fn test_build_path_as_str() -> Result<()> {
     full_relations.initialize().await?;
     let all_entities = get_all_entities(full_entities.as_ref()).await?;
     let all_relationships = get_all_relationships(full_relations.as_ref()).await?;
-    let mut graph = StableDiGraph::<EntityNode, RelationEdge>::with_capacity(
-        all_entities.len(),
-        all_relationships.len(),
-    );
-    let mut entity_indices: HashMap<String, NodeIndex> = HashMap::new();
-    let mut node_ids: HashMap<NodeIndex, String> = HashMap::new();
-
-    for (entity_id, entity_node) in all_entities.iter() {
-        let node_index = graph.add_node(entity_node.clone());
-        entity_indices.insert(entity_id.clone(), node_index);
-        node_ids.insert(node_index, entity_id.clone());
-    }
-
-    for relation_edge in all_relationships.values() {
-        let Some(&source_idx) = entity_indices.get(&relation_edge.source_entity_id) else {
-            continue;
-        };
-        let Some(&target_idx) = entity_indices.get(&relation_edge.target_entity_id) else {
-            continue;
-        };
-        graph.add_edge(source_idx, target_idx, relation_edge.clone());
-    }
+    let (graph, node_ids) = build_graph(&all_entities, &all_relationships);
 
     let max_depth = DEFAULT_MAX_DEPTH;
     let max_paths = DEFAULT_MAX_PATHS;
